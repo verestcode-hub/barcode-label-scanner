@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,6 +50,7 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -90,6 +92,9 @@ fun generateBarcodeBitmap(barcodeValue: String): androidx.compose.ui.graphics.Im
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerScreen(viewModel: ScannerViewModel) {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
     var showInventory by remember { mutableStateOf(false) }
 
     if (showInventory) {
@@ -115,10 +120,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     val context = LocalContext.current
 
-    // Ініціалізація системного сканера Google
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
 
-    // Лаунчери ТІЛЬКИ для додавання фотографій до товару
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -137,6 +140,16 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 if (savedUriString.isNotEmpty()) {
                     viewModel.updateProductImage(savedUriString)
                 }
+            }
+        }
+    )
+
+    val backupPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                viewModel.importBackup(context, it)
             }
         }
     )
@@ -187,367 +200,487 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                if (!isManualInputMode) {
-                    rootFocusRequester.requestFocus()
-                    keyboardController?.hide()
-                }
-            }
-            .onPreviewKeyEvent { keyEvent ->
-                if (!isManualInputMode && keyEvent.type == KeyEventType.KeyUp) {
-                    val key = keyEvent.key
-                    if (key == Key.Enter || key == Key.NumPadEnter) {
-                        if (scanInput.isNotBlank()) {
-                            viewModel.processBarcode(scanInput.trim())
-                            scanInput = ""
-                        }
-                        return@onPreviewKeyEvent true
-                    }
-                    val char = keyEvent.utf16CodePoint.toChar()
-                    if (char in ' '..'~') {
-                        scanInput += char
-                        return@onPreviewKeyEvent true
-                    }
-                }
-                false
-            }
-            .focusRequester(rootFocusRequester)
-            .focusable(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Складський облік Verest", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(onClick = { showInventory = true }) {
-            Text("Показати весь інвентар")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (isManualInputMode) {
-            OutlinedTextField(
-                value = scanInput,
-                onValueChange = { scanInput = it },
-                modifier = Modifier.fillMaxWidth().focusRequester(manualFocusRequester),
-                label = { Text("Введіть штрих-код вручну") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        if (scanInput.isNotBlank()) {
-                            viewModel.processBarcode(scanInput.trim())
-                            scanInput = ""
-                        }
-                        isManualInputMode = false
-                    }
-                ),
-                trailingIcon = {
-                    IconButton(onClick = { isManualInputMode = false }) {
-                        Text("✕", style = MaterialTheme.typography.titleLarge)
-                    }
-                }
-            )
-        } else {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = scanInput,
-                    onValueChange = {},
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Очікується ввід штрих-коду...") },
-                    readOnly = true
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Меню",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.headlineSmall
                 )
-                Box(modifier = Modifier.matchParentSize().clickable { isManualInputMode = true })
-            }
-        }
+                HorizontalDivider()
 
-        // КНОПКА СИСТЕМНОГО СКАНЕРА
-        if (scannedProduct == null && lastScannedBarcode == null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    // Запускаємо блискавичний сканер Google
-                    scanner.startScan()
-                        .addOnSuccessListener { barcode ->
-                            barcode.rawValue?.let {
-                                viewModel.processBarcode(it)
-                            }
+                NavigationDrawerItem(
+                    label = { Text("Показати весь інвентар") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        showInventory = true
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Імпорт JSON") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        viewModel.importDataFromJson(context)
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Зробити і надіслати бекап") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        viewModel.exportBackup(context)
+                        scope.launch {
+                            delay(1000)
+                            viewModel.shareBackup(context)
                         }
-                        .addOnFailureListener {
-                            // Якщо сканування не вдалося або користувач просто закрив камеру
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Відновити з бекапу") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        backupPickerLauncher.launch(arrayOf("application/zip"))
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Складський облік Verest") },
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(imageVector = Icons.Default.Menu, contentDescription = "Відкрити меню")
                         }
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-            ) {
-                Text("📷 Сканувати штрих-код", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
             }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        saveStatus?.let {
-            Text(text = it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        scannedProduct?.let { product ->
-            OutlinedButton(
-                onClick = {
-                    viewModel.clearCurrentProduct()
-                    rootFocusRequester.requestFocus()
-                },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-            ) {
-                Text("✕ Закрити картку товару")
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    if (isEditing) {
-                        var nameInput by remember(product.barcode) { mutableStateOf(product.name) }
-                        var pluInput by remember(product.barcode) { mutableStateOf(product.plu) }
-
-                        OutlinedTextField(
-                            value = nameInput,
-                            onValueChange = { nameInput = it },
-                            label = { Text("Назва товару") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = pluInput,
-                            onValueChange = { pluInput = it },
-                            label = { Text("Код PLU (внутрішній)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = {
-                            viewModel.updateProductDetails(nameInput, pluInput)
-                            isEditing = false
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        if (!isManualInputMode) {
                             rootFocusRequester.requestFocus()
                             keyboardController?.hide()
-                        }) { Text("Зберегти зміни") }
-                    } else {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Системні дані:", fontWeight = FontWeight.Bold)
-                            Button(onClick = { isEditing = true }) { Text("Редагувати") }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Назва: ${product.name.ifEmpty { "Без назви" }}")
-                        Text(text = "Код: ${product.barcode}")
-                        Text(text = "PLU: ${product.plu.ifEmpty { "Не вказано" }}")
+                    }
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (!isManualInputMode && keyEvent.type == KeyEventType.KeyUp) {
+                            val key = keyEvent.key
+                            if (key == Key.Enter || key == Key.NumPadEnter) {
+                                if (scanInput.isNotBlank()) {
+                                    viewModel.processBarcode(scanInput.trim())
+                                    scanInput = ""
+                                }
+                                return@onPreviewKeyEvent true
+                            }
+                            val char = keyEvent.utf16CodePoint.toChar()
+                            if (char in ' '..'~') {
+                                scanInput += char
+                                return@onPreviewKeyEvent true
+                            }
+                        }
+                        false
+                    }
+                    .focusRequester(rootFocusRequester)
+                    .focusable(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                if (isManualInputMode) {
+                    OutlinedTextField(
+                        value = scanInput,
+                        onValueChange = { scanInput = it },
+                        modifier = Modifier.fillMaxWidth().focusRequester(manualFocusRequester),
+                        label = { Text("Введіть штрих-код вручну") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (scanInput.isNotBlank()) {
+                                    viewModel.processBarcode(scanInput.trim())
+                                    scanInput = ""
+                                }
+                                isManualInputMode = false
+                            }
+                        ),
+                        trailingIcon = {
+                            IconButton(onClick = { isManualInputMode = false }) {
+                                Text("✕", style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = scanInput,
+                            onValueChange = {},
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Очікується ввід штрих-коду...") },
+                            readOnly = true
+                        )
+                        Box(modifier = Modifier.matchParentSize().clickable { isManualInputMode = true })
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Card(
-                modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(2.dp, Color.Black),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = product.name.ifEmpty { "БЕЗ НАЗВИ" }.uppercase(),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
-                        color = Color.Black,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
+                if (scannedProduct == null && lastScannedBarcode == null) {
                     Spacer(modifier = Modifier.height(16.dp))
-
-                    if (product.imageHistory.isNotEmpty()) {
-                        val pagerState = rememberPagerState(
-                            initialPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0),
-                            pageCount = { product.imageHistory.size }
-                        )
-
-                        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(220.dp)) { page ->
-                            val photoUri = product.imageHistory[page]
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                                AsyncImage(
-                                    model = photoUri,
-                                    contentDescription = "Фото варіант $page",
-                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
-
-                                if (photoUri == product.imagePath) {
-                                    Surface(
-                                        color = Color.Black.copy(alpha = 0.6f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        modifier = Modifier.padding(8.dp).align(Alignment.TopEnd)
-                                    ) {
-                                        Text("Основне", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                    Button(
+                        onClick = {
+                            scanner.startScan()
+                                .addOnSuccessListener { barcode ->
+                                    barcode.rawValue?.let {
+                                        viewModel.processBarcode(it)
                                     }
                                 }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(Modifier.wrapContentHeight().fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            repeat(product.imageHistory.size) { iteration ->
-                                val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
-                                Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                            if (currentPagerPhoto != product.imagePath) {
-                                Button(
-                                    onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                ) {
-                                    Text("✅ Зберегти як основну")
+                                .addOnFailureListener {
                                 }
-                            }
-
-                            TextButton(onClick = { showBottomSheet = true }) {
-                                Text("➕ Додати варіант")
-                            }
-                        }
-
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(150.dp)
-                                .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
-                                .clickable { showBottomSheet = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Немає зображення", color = Color.Gray)
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Button(onClick = { showBottomSheet = true }) {
-                                    Text("Додати фото")
-                                }
-                            }
-                        }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                    ) {
+                        Text("📷 Сканувати штрих-код", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    HorizontalDivider(color = Color.Black, thickness = 1.dp)
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val barcodeBitmap = remember(product.barcode) { generateBarcodeBitmap(product.barcode) }
-
-                    if (barcodeBitmap != null) {
-                        Image(
-                            bitmap = barcodeBitmap,
-                            contentDescription = "Штрих-код",
-                            modifier = Modifier.fillMaxWidth().height(60.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = product.barcode,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.Black,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
 
-        } ?: run {
-            if (lastScannedBarcode != null) {
-                if (isCreating) {
-                    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                saveStatus?.let {
+                    Text(text = it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                scannedProduct?.let { product ->
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.clearCurrentProduct()
+                            rootFocusRequester.requestFocus()
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    ) {
+                        Text("✕ Закрити картку товару")
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(text = "Новий товар (Код: $lastScannedBarcode)", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(8.dp))
+                            if (isEditing) {
+                                var nameInput by remember(product.barcode) { mutableStateOf(product.name) }
+                                var pluInput by remember(product.barcode) { mutableStateOf(product.plu) }
+                                var dateInput by remember(product.barcode) { mutableStateOf(product.useByDate) }
+                                var groupInput by remember(product.barcode) { mutableStateOf(product.groupPlu) }
 
-                            var newNameInput by remember { mutableStateOf("") }
-                            OutlinedTextField(
-                                value = newNameInput,
-                                onValueChange = { newNameInput = it },
-                                label = { Text("Введіть назву для створення") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                TextButton(onClick = {
-                                    isCreating = false
-                                    viewModel.clearCurrentProduct() // Очищаємо екран при повному скасуванні
-                                }) { Text("Скасувати") }
-
+                                OutlinedTextField(
+                                    value = nameInput,
+                                    onValueChange = { nameInput = it },
+                                    label = { Text("Назва товару") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = pluInput,
+                                    onValueChange = { pluInput = it },
+                                    label = { Text("Код PLU") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = dateInput,
+                                    onValueChange = { dateInput = it },
+                                    label = { Text("Дата придатності") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = groupInput,
+                                    onValueChange = { groupInput = it },
+                                    label = { Text("Мережа / Група") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Button(onClick = {
-                                    viewModel.createNewProduct(lastScannedBarcode!!, newNameInput)
-                                    isCreating = false
+                                    viewModel.updateProductDetails(nameInput, pluInput, dateInput, groupInput)
+                                    isEditing = false
                                     rootFocusRequester.requestFocus()
                                     keyboardController?.hide()
-                                }) { Text("Створити і зберегти") }
+                                }) { Text("Зберегти зміни") }
+                            } else {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(text = "Системні дані:", fontWeight = FontWeight.Bold)
+                                    Button(onClick = { isEditing = true }) { Text("Редагувати") }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(text = "Мережа: ${product.groupPlu.ifEmpty { "Не вказано" }}")
+                                Text(text = "Назва: ${product.name.ifEmpty { "Без назви" }}")
+                                Text(text = "Код: ${product.barcode}")
+                                Text(text = "PLU: ${product.plu.ifEmpty { "Не вказано" }}")
+                                Text(text = "Дата придатності: ${product.useByDate.ifEmpty { "Не вказано" }}")
                             }
                         }
                     }
-                } else {
-                    // ОНОВЛЕНИЙ БЛОК: Меню дій, якщо товар не знайдено
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Text("Товар не знайдено", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)
-                        Text("Код: $lastScannedBarcode", color = Color.Gray)
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                        Button(
-                            onClick = { isCreating = true },
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
-                        ) {
-                            Text("➕ Створити новий товар")
-                        }
+                    Card(
+                        modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(2.dp, Color.Black),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = product.name.ifEmpty { "БЕЗ НАЗВИ" }.uppercase(),
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
+                                color = Color.Black,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                        OutlinedButton(
-                            onClick = {
-                                // Одразу запускаємо системний сканер знову
-                                scanner.startScan()
-                                    .addOnSuccessListener { barcode ->
-                                        barcode.rawValue?.let {
-                                            viewModel.processBarcode(it)
+                            if (product.imageHistory.isNotEmpty()) {
+                                val pagerState = rememberPagerState(
+                                    initialPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0),
+                                    pageCount = { product.imageHistory.size }
+                                )
+
+                                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(220.dp)) { page ->
+                                    val photoUri = product.imageHistory[page]
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                                        AsyncImage(
+                                            model = photoUri,
+                                            contentDescription = "Фото варіант $page",
+                                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+
+                                        if (photoUri == product.imagePath) {
+                                            Surface(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.padding(8.dp).align(Alignment.TopEnd)
+                                            ) {
+                                                Text("Основне", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                                            }
                                         }
                                     }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
-                        ) {
-                            Text("📷 Сканувати інший")
-                        }
+                                }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
 
-                        TextButton(onClick = { viewModel.clearCurrentProduct() }) {
-                            Text("✕ Очистити і закрити")
+                                Row(Modifier.wrapContentHeight().fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                    repeat(product.imageHistory.size) { iteration ->
+                                        val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
+                                        Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                                    if (currentPagerPhoto != product.imagePath) {
+                                        Button(
+                                            onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("✅ Зберегти як основну")
+                                        }
+                                    }
+
+                                    TextButton(onClick = { showBottomSheet = true }) {
+                                        Text("➕ Додати варіант")
+                                    }
+                                }
+
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp)
+                                        .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
+                                        .clickable { showBottomSheet = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Немає зображення", color = Color.Gray)
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Button(onClick = { showBottomSheet = true }) {
+                                            Text("Додати фото")
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider(color = Color.Black, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            val barcodeBitmap = remember(product.barcode) { generateBarcodeBitmap(product.barcode) }
+
+                            if (barcodeBitmap != null) {
+                                Image(
+                                    bitmap = barcodeBitmap,
+                                    contentDescription = "Штрих-код",
+                                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = product.barcode,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.Black,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                } ?: run {
+                    if (lastScannedBarcode != null) {
+                        if (isCreating) {
+                            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(text = "Новий товар (Код: $lastScannedBarcode)", style = MaterialTheme.typography.titleMedium)
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    var newNameInput by remember { mutableStateOf("") }
+                                    var isRecognizingText by remember { mutableStateOf(false) }
+
+                                    val textScannerLauncher = rememberLauncherForActivityResult(
+                                        contract = ActivityResultContracts.PickVisualMedia(),
+                                        onResult = { uri ->
+                                            uri?.let {
+                                                isRecognizingText = true
+                                                val inputStream = context.contentResolver.openInputStream(it)
+                                                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                                                inputStream?.close()
+
+                                                if (bitmap != null) {
+                                                    viewModel.performTextRecognition(context, bitmap) { result ->
+                                                        newNameInput = result
+                                                        isRecognizingText = false
+                                                    }
+                                                } else {
+                                                    isRecognizingText = false
+                                                }
+                                            }
+                                        }
+                                    )
+
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedTextField(
+                                            value = newNameInput,
+                                            onValueChange = { newNameInput = it },
+                                            label = { Text("Введіть назву для створення") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        IconButton(
+                                            onClick = { textScannerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+                                        ) {
+                                            if (isRecognizingText) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            } else {
+                                                Text("🔤", fontSize = 24.sp)
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        TextButton(onClick = {
+                                            isCreating = false
+                                            viewModel.clearCurrentProduct()
+                                        }) { Text("Скасувати") }
+
+                                        Button(onClick = {
+                                            viewModel.createNewProduct(lastScannedBarcode!!, newNameInput)
+                                            isCreating = false
+                                            rootFocusRequester.requestFocus()
+                                            keyboardController?.hide()
+                                        }) { Text("Створити і зберегти") }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text("Товар не знайдено", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)
+                                Text("Код: $lastScannedBarcode", color = Color.Gray)
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Button(
+                                    onClick = { isCreating = true },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                                ) {
+                                    Text("➕ Створити новий товар")
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                OutlinedButton(
+                                    onClick = {
+                                        scanner.startScan()
+                                            .addOnSuccessListener { barcode ->
+                                                barcode.rawValue?.let {
+                                                    viewModel.processBarcode(it)
+                                                }
+                                            }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                                ) {
+                                    Text("📷 Сканувати інший")
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                TextButton(onClick = { viewModel.clearCurrentProduct() }) {
+                                    Text("✕ Очистити і закрити")
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Візьміть сканер і відскануйте етикетку", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-            } else {
-                Text("Візьміть сканер і відскануйте етикетку", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

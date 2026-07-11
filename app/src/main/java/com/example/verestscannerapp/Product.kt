@@ -9,8 +9,18 @@ data class Product(
     @PrimaryKey val barcode: String,
     val name: String,
     val plu: String,
+    val useByDate: String = "",
+    val groupPlu: String = "",
     val imagePath: String = "",
     val imageHistory: List<String> = emptyList()
+)
+
+data class JsonProduct(
+    val EAN: String?,
+    val NAME: String?,
+    val NUM: String?,
+    val USEDBYDATE: String?,
+    val F_GROUPPLU: String?
 )
 
 class StringListConverter {

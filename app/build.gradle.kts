@@ -55,4 +55,8 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.3.0")
+
+    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("androidx.compose.material:material-icons-extended")
 }
