@@ -4,14 +4,17 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
@@ -28,11 +32,12 @@ import coil.compose.AsyncImage
 fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
     val products by viewModel.allProducts.collectAsState()
 
-    // Стан для пошуку
     var searchQuery by remember { mutableStateOf("") }
 
     var selectedProducts by remember { mutableStateOf(setOf<Product>()) }
     val isSelectionMode = selectedProducts.isNotEmpty()
+
+    var isGridView by remember { mutableStateOf(false) }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
@@ -50,7 +55,7 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                     if (isSelectionMode) {
                         Text("Вибрано: ${selectedProducts.size}")
                     } else {
-                        Text("Інвентар (${filteredProducts.size} шт.)")
+                        Text("Інвентар (${filteredProducts.size})")
                     }
                 },
                 navigationIcon = {
@@ -71,6 +76,13 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Видалити вибрані",
                                 tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { isGridView = !isGridView }) {
+                            Icon(
+                                imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                                contentDescription = "Змінити вигляд"
                             )
                         }
                     }
@@ -111,11 +123,13 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                     Text("За вашим запитом нічого не знайдено", color = Color.Gray)
                 }
             } else {
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = if (isGridView) GridCells.Fixed(2) else GridCells.Fixed(1),
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
                     contentPadding = PaddingValues(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(filteredProducts) { product ->
@@ -149,63 +163,111 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            if (isGridView) {
+                                // ---------------- ВИГЛЯД СІТКИ (КАРТКИ) ----------------
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        if (product.imagePath.isNotEmpty()) {
+                                            AsyncImage(
+                                                model = product.imagePath,
+                                                contentDescription = "Фото",
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(100.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(100.dp)
+                                                    .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("Нема фото", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
 
-                                if (product.imagePath.isNotEmpty()) {
-                                    AsyncImage(
-                                        model = product.imagePath,
-                                        contentDescription = "Фото",
-                                        modifier = Modifier
-                                            .size(60.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(60.dp)
-                                            .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("Нема", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+                                        // Чекбокс поверх фото, якщо є виділення
+                                        if (isSelectionMode) {
+                                            Checkbox(
+                                                checked = isSelected,
+                                                onCheckedChange = null,
+                                                modifier = Modifier.align(Alignment.TopEnd)
+                                            )
+                                        }
                                     }
-                                }
 
-                                Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
 
-                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = product.name.ifEmpty { "Без назви" },
                                         fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyLarge
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(text = "Код: ${product.barcode}", style = MaterialTheme.typography.bodyMedium)
-                                    if (product.plu.isNotEmpty()) {
-                                        Text(text = "PLU: ${product.plu}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                                    }
+                                    Text(
+                                        text = product.barcode,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
-
-                                if (isSelectionMode) {
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = null
-                                    )
-                                } else {
-                                    IconButton(
-                                        onClick = {
-                                            selectedProducts = setOf(product)
-                                            showDeleteDialog = true
+                            } else {
+                                // ---------------- ВИГЛЯД СПИСКУ (РЯДКИ) ----------------
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (product.imagePath.isNotEmpty()) {
+                                        AsyncImage(
+                                            model = product.imagePath,
+                                            contentDescription = "Фото",
+                                            modifier = Modifier
+                                                .size(60.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(60.dp)
+                                                .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("Нема", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
                                         }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Видалити",
-                                            tint = MaterialTheme.colorScheme.error
+                                    }
+
+                                    Spacer(modifier = Modifier.width(16.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = product.name.ifEmpty { "Без назви" },
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                        Text(text = "Код: ${product.barcode}", style = MaterialTheme.typography.bodyMedium)
+                                        if (product.plu.isNotEmpty()) {
+                                            Text(text = "PLU: ${product.plu}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        }
+                                    }
+
+
+                                    if (isSelectionMode) {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = null
                                         )
                                     }
                                 }
@@ -216,6 +278,7 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
             }
         }
 
+        // Діалогове вікно з вимогою вписати "DELETE"
         if (showDeleteDialog) {
             AlertDialog(
                 onDismissRequest = {
@@ -258,7 +321,6 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                     TextButton(onClick = {
                         showDeleteDialog = false
                         deleteConfirmationText = ""
-
                         if (!isSelectionMode && selectedProducts.size == 1) {
                             selectedProducts = emptySet()
                         }
