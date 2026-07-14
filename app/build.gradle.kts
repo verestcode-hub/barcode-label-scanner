@@ -61,4 +61,6 @@ dependencies {
     implementation("com.vanniktech:android-image-cropper:4.6.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
 
-    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")}
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+}

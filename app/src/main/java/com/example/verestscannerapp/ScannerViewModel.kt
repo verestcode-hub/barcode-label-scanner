@@ -23,6 +23,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlin.time.Duration.Companion.milliseconds
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 
 class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     private val _scannedProduct = MutableStateFlow<Product?>(null)
@@ -53,6 +55,20 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
                 e.printStackTrace()
             }
         }
+    }
+
+    fun scanBarcodeFromBitmap(bitmap: Bitmap, onResult: (String?) -> Unit) {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        val scanner = BarcodeScanning.getClient()
+
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                val rawValue = barcodes.firstOrNull()?.rawValue
+                onResult(rawValue)
+            }
+            .addOnFailureListener {
+                onResult(null)
+            }
     }
 
     fun exportBackup(context: Context) {

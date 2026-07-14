@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -25,7 +25,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,20 +51,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
-import kotlinx.coroutines.launch
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -130,6 +136,60 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
 
+    // --- МАГІЧНИЙ СКАНЕР ЕТИКЕТОК ---
+    var isMagicScanning by remember { mutableStateOf(false) }
+    var prefilledName by remember { mutableStateOf("") }
+
+    val magicCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            val croppedUri = result.uriContent
+            val originalUri = result.originalUri
+
+            if (croppedUri != null && originalUri != null) {
+                isMagicScanning = true
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val origStream = context.contentResolver.openInputStream(originalUri)
+                        val origBitmap = android.graphics.BitmapFactory.decodeStream(origStream)
+                        origStream?.close()
+
+                        val cropStream = context.contentResolver.openInputStream(croppedUri)
+                        val cropBitmap = android.graphics.BitmapFactory.decodeStream(cropStream)
+                        cropStream?.close()
+
+                        withContext(Dispatchers.Main) {
+                            if (origBitmap != null && cropBitmap != null) {
+                                // 1. Читаємо текст із обрізаного шматочка
+                                viewModel.performTextRecognition(context, cropBitmap) { text ->
+                                    prefilledName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+
+                                    // 2. Одразу шукаємо штрих-код на повному фотографії
+                                    viewModel.scanBarcodeFromBitmap(origBitmap) { barcode ->
+                                        isMagicScanning = false
+                                        if (barcode != null) {
+                                            isCreating = true
+                                            viewModel.processBarcode(barcode)
+                                        } else {
+                                            Toast.makeText(context, "Штрих-код не знайдено на фотографії", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            } else {
+                                isMagicScanning = false
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        withContext(Dispatchers.Main) { isMagicScanning = false }
+                    }
+                }
+            }
+        } else {
+            isMagicScanning = false
+        }
+    }
+    // ----------------------------------
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -189,7 +249,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PhotoCamera, // Офіційна іконка камери
+                        imageVector = Icons.Default.PhotoCamera,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -363,29 +423,72 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     }
                 }
 
-                if (scannedProduct == null && lastScannedBarcode == null) {
+                if (isMagicScanning) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(16.dp))
+                    Text("Розпізнавання етикетки...", style = MaterialTheme.typography.bodyLarge)
+                } else if (scannedProduct == null && lastScannedBarcode == null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Button(
                         onClick = {
+                            isCreating = false
                             scanner.startScan()
                                 .addOnSuccessListener { barcode ->
-                                    barcode.rawValue?.let {
-                                        viewModel.processBarcode(it)
-                                    }
+                                    barcode.rawValue?.let { viewModel.processBarcode(it) }
                                 }
-                                .addOnFailureListener {
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Знайти товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            isCreating = true
+                            scanner.startScan()
+                                .addOnSuccessListener { barcode ->
+                                    barcode.rawValue?.let { viewModel.processBarcode(it) }
                                 }
                         },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.QrCodeScanner,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Icon(imageVector = Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Сканувати штрих-код", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("Створити новий товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            magicCropLauncher.launch(
+                                CropImageContractOptions(
+                                    uri = null,
+                                    cropImageOptions = CropImageOptions().apply {
+                                        imageSourceIncludeGallery = true
+                                        imageSourceIncludeCamera = true
+                                        guidelines = CropImageView.Guidelines.ON
+                                        allowRotation = true
+                                        allowCounterRotation = true
+                                        multiTouchEnabled = true
+                                    }
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Створити з фото етикетки", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -591,49 +694,44 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     Spacer(modifier = Modifier.height(32.dp))
 
                 } ?: run {
-                    if (lastScannedBarcode != null) {
+                    if (lastScannedBarcode != null && !isMagicScanning) {
                         if (isCreating) {
                             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(text = "Новий товар (Код: $lastScannedBarcode)", style = MaterialTheme.typography.titleMedium)
                                     Spacer(modifier = Modifier.height(8.dp))
 
-                                    var newNameInput by remember { mutableStateOf("") }
+                                    var newNameInput by remember(lastScannedBarcode) { mutableStateOf(if (prefilledName.isNotEmpty()) prefilledName else "") }
                                     var isRecognizingText by remember { mutableStateOf(false) }
 
-                                    val documentScannerOptions = remember {
-                                        GmsDocumentScannerOptions.Builder()
-                                            .setGalleryImportAllowed(true)
-                                            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-                                            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
-                                            .setPageLimit(1)
-                                            .build()
-                                    }
-                                    val documentScanner = remember { GmsDocumentScanning.getClient(documentScannerOptions) }
-
-                                    val documentScannerLauncher = rememberLauncherForActivityResult(
-                                        contract = ActivityResultContracts.StartIntentSenderForResult()
-                                    ) { result ->
-                                        if (result.resultCode == Activity.RESULT_OK) {
-                                            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-
-                                            scanResult?.pages?.firstOrNull()?.let { page ->
+                                    val manualTextCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+                                        if (result.isSuccessful) {
+                                            result.uriContent?.let { croppedUri ->
                                                 isRecognizingText = true
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        val inputStream = context.contentResolver.openInputStream(croppedUri)
+                                                        val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                                                        inputStream?.close()
 
-                                                val imageUri = page.imageUri
-                                                val inputStream = context.contentResolver.openInputStream(imageUri)
-                                                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                                                inputStream?.close()
-
-                                                if (bitmap != null) {
-                                                    viewModel.performTextRecognition(context, bitmap) { text ->
-                                                        newNameInput = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
-                                                        isRecognizingText = false
+                                                        if (bitmap != null) {
+                                                            withContext(Dispatchers.Main) {
+                                                                viewModel.performTextRecognition(context, bitmap) { text ->
+                                                                    newNameInput = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                                                    isRecognizingText = false
+                                                                }
+                                                            }
+                                                        } else {
+                                                            withContext(Dispatchers.Main) { isRecognizingText = false }
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                        withContext(Dispatchers.Main) { isRecognizingText = false }
                                                     }
-                                                } else {
-                                                    isRecognizingText = false
                                                 }
                                             }
+                                        } else {
+                                            isRecognizingText = false
                                         }
                                     }
 
@@ -650,15 +748,19 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                                         IconButton(
                                             onClick = {
-                                                documentScanner.getStartScanIntent((context as Activity))
-                                                    .addOnSuccessListener { intentSender ->
-                                                        documentScannerLauncher.launch(
-                                                            IntentSenderRequest.Builder(intentSender).build()
-                                                        )
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        e.printStackTrace()
-                                                    }
+                                                manualTextCropLauncher.launch(
+                                                    CropImageContractOptions(
+                                                        uri = null,
+                                                        cropImageOptions = CropImageOptions().apply {
+                                                            imageSourceIncludeGallery = true
+                                                            imageSourceIncludeCamera = true
+                                                            guidelines = CropImageView.Guidelines.ON
+                                                            allowRotation = true
+                                                            allowCounterRotation = true
+                                                            multiTouchEnabled = true
+                                                        }
+                                                    )
+                                                )
                                             },
                                             modifier = Modifier
                                                 .size(56.dp)
@@ -675,12 +777,14 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         TextButton(onClick = {
                                             isCreating = false
+                                            prefilledName = "" // Очищаємо кеш назви при скасуванні
                                             viewModel.clearCurrentProduct()
                                         }) { Text("Скасувати") }
 
                                         Button(onClick = {
                                             viewModel.createNewProduct(lastScannedBarcode!!, newNameInput)
                                             isCreating = false
+                                            prefilledName = ""
                                             rootFocusRequester.requestFocus()
                                             keyboardController?.hide()
                                         }) { Text("Створити і зберегти") }
@@ -724,7 +828,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 }
                             }
                         }
-                    } else {
+                    } else if (!isMagicScanning) {
                         Text("Візьміть сканер і відскануйте етикетку", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
