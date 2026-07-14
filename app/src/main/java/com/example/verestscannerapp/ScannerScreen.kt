@@ -136,7 +136,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
 
-    // --- МАГІЧНИЙ СКАНЕР ЕТИКЕТОК ---
     var isMagicScanning by remember { mutableStateOf(false) }
     var prefilledName by remember { mutableStateOf("") }
 
@@ -144,6 +143,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         if (result.isSuccessful) {
             val croppedUri = result.uriContent
             val originalUri = result.originalUri
+            val cropRect = result.cropRect
 
             if (croppedUri != null && originalUri != null) {
                 isMagicScanning = true
@@ -159,12 +159,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                         withContext(Dispatchers.Main) {
                             if (origBitmap != null && cropBitmap != null) {
-                                // 1. Читаємо текст із обрізаного шматочка
+
                                 viewModel.performTextRecognition(context, cropBitmap) { text ->
                                     prefilledName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
 
-                                    // 2. Одразу шукаємо штрих-код на повному фотографії
-                                    viewModel.scanBarcodeFromBitmap(origBitmap) { barcode ->
+                                    viewModel.scanBarcodeFromBitmap(origBitmap, cropRect) { barcode ->
                                         isMagicScanning = false
                                         if (barcode != null) {
                                             isCreating = true
@@ -188,7 +187,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             isMagicScanning = false
         }
     }
-    // ----------------------------------
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -473,8 +471,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 CropImageContractOptions(
                                     uri = null,
                                     cropImageOptions = CropImageOptions().apply {
-                                        imageSourceIncludeGallery = true
                                         imageSourceIncludeCamera = true
+                                        imageSourceIncludeGallery = false
                                         guidelines = CropImageView.Guidelines.ON
                                         allowRotation = true
                                         allowCounterRotation = true

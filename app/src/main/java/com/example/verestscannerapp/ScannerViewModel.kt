@@ -25,6 +25,8 @@ import java.util.zip.ZipOutputStream
 import kotlin.time.Duration.Companion.milliseconds
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import android.graphics.Rect
+import kotlin.math.sqrt
 
 class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     private val _scannedProduct = MutableStateFlow<Product?>(null)
@@ -57,14 +59,36 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
         }
     }
 
-    fun scanBarcodeFromBitmap(bitmap: Bitmap, onResult: (String?) -> Unit) {
+    fun scanBarcodeFromBitmap(bitmap: Bitmap, cropRect: Rect?, onResult: (String?) -> Unit) {
         val image = InputImage.fromBitmap(bitmap, 0)
         val scanner = BarcodeScanning.getClient()
 
         scanner.process(image)
             .addOnSuccessListener { barcodes ->
-                val rawValue = barcodes.firstOrNull()?.rawValue
-                onResult(rawValue)
+                if (barcodes.isEmpty()) {
+                    onResult(null)
+                    return@addOnSuccessListener
+                }
+
+                if (cropRect == null) {
+                    val bestBarcode = barcodes.maxByOrNull { it.boundingBox?.width() ?: 0 }
+                    onResult(bestBarcode?.rawValue)
+                } else {
+                    val cropCenterX = cropRect.exactCenterX()
+                    val cropCenterY = cropRect.exactCenterY()
+
+                    val closestBarcode = barcodes.minByOrNull { barcode ->
+                        val bbox = barcode.boundingBox
+                        if (bbox != null) {
+                            val dx = bbox.exactCenterX() - cropCenterX
+                            val dy = bbox.exactCenterY() - cropCenterY
+                            sqrt(dx * dx + dy * dy)
+                        } else {
+                            Float.MAX_VALUE
+                        }
+                    }
+                    onResult(closestBarcode?.rawValue)
+                }
             }
             .addOnFailureListener {
                 onResult(null)
