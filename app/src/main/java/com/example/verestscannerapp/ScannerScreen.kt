@@ -1,10 +1,12 @@
 package com.example.verestscannerapp
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -44,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import kotlinx.coroutines.delay
@@ -51,6 +56,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -180,7 +188,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     }.padding(vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("📸", style = MaterialTheme.typography.headlineMedium)
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera, // Офіційна іконка камери
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Зробити фото", style = MaterialTheme.typography.bodyLarge)
                 }
@@ -192,7 +204,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     }.padding(vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🖼️", style = MaterialTheme.typography.headlineMedium)
+                    Icon(
+                        imageVector = Icons.Default.PhotoLibrary,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Вибрати з галереї", style = MaterialTheme.typography.bodyLarge)
                 }
@@ -363,7 +379,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
                     ) {
-                        Text("📷 Сканувати штрих-код", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Сканувати штрих-код", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -579,18 +601,33 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     var newNameInput by remember { mutableStateOf("") }
                                     var isRecognizingText by remember { mutableStateOf(false) }
 
-                                    val textScannerLauncher = rememberLauncherForActivityResult(
-                                        contract = ActivityResultContracts.PickVisualMedia(),
-                                        onResult = { uri ->
-                                            uri?.let {
+                                    val documentScannerOptions = remember {
+                                        GmsDocumentScannerOptions.Builder()
+                                            .setGalleryImportAllowed(true)
+                                            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                                            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+                                            .setPageLimit(1)
+                                            .build()
+                                    }
+                                    val documentScanner = remember { GmsDocumentScanning.getClient(documentScannerOptions) }
+
+                                    val documentScannerLauncher = rememberLauncherForActivityResult(
+                                        contract = ActivityResultContracts.StartIntentSenderForResult()
+                                    ) { result ->
+                                        if (result.resultCode == Activity.RESULT_OK) {
+                                            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+
+                                            scanResult?.pages?.firstOrNull()?.let { page ->
                                                 isRecognizingText = true
-                                                val inputStream = context.contentResolver.openInputStream(it)
+
+                                                val imageUri = page.imageUri
+                                                val inputStream = context.contentResolver.openInputStream(imageUri)
                                                 val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                                                 inputStream?.close()
 
                                                 if (bitmap != null) {
-                                                    viewModel.performTextRecognition(context, bitmap) { result ->
-                                                        newNameInput = result
+                                                    viewModel.performTextRecognition(context, bitmap) { text ->
+                                                        newNameInput = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
                                                         isRecognizingText = false
                                                     }
                                                 } else {
@@ -598,7 +635,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 }
                                             }
                                         }
-                                    )
+                                    }
 
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                         OutlinedTextField(
@@ -606,13 +643,23 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                             onValueChange = { newNameInput = it },
                                             label = { Text("Введіть назву для створення") },
                                             modifier = Modifier.weight(1f),
-                                            singleLine = true
+                                            maxLines = 3
                                         )
 
                                         Spacer(modifier = Modifier.width(8.dp))
 
                                         IconButton(
-                                            onClick = { textScannerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                            onClick = {
+                                                documentScanner.getStartScanIntent((context as Activity))
+                                                    .addOnSuccessListener { intentSender ->
+                                                        documentScannerLauncher.launch(
+                                                            IntentSenderRequest.Builder(intentSender).build()
+                                                        )
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        e.printStackTrace()
+                                                    }
+                                            },
                                             modifier = Modifier
                                                 .size(56.dp)
                                                 .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))

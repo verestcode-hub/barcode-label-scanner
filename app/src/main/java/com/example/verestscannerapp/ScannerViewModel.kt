@@ -253,9 +253,11 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     }
 
     fun performTextRecognition(context: Context, bitmap: Bitmap, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val recognizedName = TesseractHelper.recognizeText(context, bitmap)
-            onResult(recognizedName)
+        viewModelScope.launch(Dispatchers.IO) {
+            val recognizedName = OcrManager.extractTextFromBitmap(context, bitmap)
+            launch(Dispatchers.Main) {
+                onResult(recognizedName)
+            }
         }
     }
 
