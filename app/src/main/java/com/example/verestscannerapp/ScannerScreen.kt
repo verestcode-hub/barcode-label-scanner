@@ -449,24 +449,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                     Button(
                         onClick = {
-                            isCreating = true
-                            scanner.startScan()
-                                .addOnSuccessListener { barcode ->
-                                    barcode.rawValue?.let { viewModel.processBarcode(it) }
-                                }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                    ) {
-                        Icon(imageVector = Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Створити новий товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = {
                             magicCropLauncher.launch(
                                 CropImageContractOptions(
                                     uri = null,
