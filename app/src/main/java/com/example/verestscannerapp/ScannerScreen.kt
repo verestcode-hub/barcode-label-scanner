@@ -25,8 +25,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -65,6 +69,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -285,8 +293,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     style = MaterialTheme.typography.headlineSmall
                 )
                 HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
 
                 NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.List, contentDescription = "Інвентар") },
                     label = { Text("Показати весь інвентар") },
                     selected = false,
                     onClick = {
@@ -297,6 +307,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 )
 
                 NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = "Імпорт") },
                     label = { Text("Імпорт JSON") },
                     selected = false,
                     onClick = {
@@ -307,6 +318,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 )
 
                 NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Бекап") },
                     label = { Text("Зробити і надіслати бекап") },
                     selected = false,
                     onClick = {
@@ -321,6 +333,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 )
 
                 NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = "Відновити") },
                     label = { Text("Відновити з бекапу") },
                     selected = false,
                     onClick = {
@@ -404,7 +417,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         ),
                         trailingIcon = {
                             IconButton(onClick = { isManualInputMode = false }) {
-                                Text("✕", style = MaterialTheme.typography.titleLarge)
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Закрити")
                             }
                         }
                     )
@@ -487,7 +500,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                     ) {
-                        Text("✕ Закрити картку товару")
+                        Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Закрити картку товару")
                     }
 
                     Card(
@@ -617,12 +632,16 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                             onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                         ) {
-                                            Text("✅ Зберегти як основну")
+                                            Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Зберегти як основну")
                                         }
                                     }
 
                                     TextButton(onClick = { showBottomSheet = true }) {
-                                        Text("➕ Додати варіант")
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Додати варіант")
                                     }
                                 }
 
@@ -749,7 +768,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                             if (isRecognizingText) {
                                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                             } else {
-                                                Text("🔤", fontSize = 24.sp)
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = "Розпізнати текст",
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
                                             }
                                         }
                                     }
@@ -782,7 +805,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     onClick = { isCreating = true },
                                     modifier = Modifier.fillMaxWidth().height(50.dp)
                                 ) {
-                                    Text("➕ Створити новий товар")
+                                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Створити новий товар")
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -798,13 +823,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     },
                                     modifier = Modifier.fillMaxWidth().height(50.dp)
                                 ) {
-                                    Text("📷 Сканувати інший")
+                                    Icon(imageVector = Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Сканувати інший")
                                 }
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 TextButton(onClick = { viewModel.clearCurrentProduct() }) {
-                                    Text("✕ Очистити і закрити")
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Очистити і закрити")
                                 }
                             }
                         }
