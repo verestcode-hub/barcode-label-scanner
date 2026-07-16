@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,21 +38,29 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
+fun InventoryScreen(
+    viewModel: ScannerViewModel,
+    onClose: () -> Unit,
+    onProductSelected: (String) -> Unit,
+    gridState: LazyGridState,
+    isGridView: Boolean,
+    onGridViewChange: (Boolean) -> Unit,
+    savedGridColumns: Int,
+    onColumnsChange: (Int) -> Unit,
+    rememberGridChoice: Boolean,
+    onRememberChange: (Boolean) -> Unit,
+    fontSizeScale: Float,
+    onFontSizeChange: (Float) -> Unit
+) {
     val products by viewModel.allProducts.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedProducts by remember { mutableStateOf(setOf<Product>()) }
     val isSelectionMode = selectedProducts.isNotEmpty()
 
-    var isGridView by remember { mutableStateOf(false) }
-    var savedGridColumns by remember { mutableStateOf(2) }
-    var rememberGridChoice by remember { mutableStateOf(true) }
     var showGridSettings by remember { mutableStateOf(false) }
-    var fontSizeScale by remember { mutableStateOf(1.0f) }
 
     val currentColumns = if (isGridView) savedGridColumns else 1
-    val gridState = rememberLazyGridState()
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
@@ -62,6 +69,14 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
         it.name.contains(searchQuery, ignoreCase = true) ||
                 it.barcode.contains(searchQuery, ignoreCase = true) ||
                 it.plu.contains(searchQuery, ignoreCase = true)
+    }
+
+    androidx.activity.compose.BackHandler {
+        if (isSelectionMode) {
+            selectedProducts = emptySet()
+        } else {
+            onClose()
+        }
     }
 
     Scaffold(
@@ -80,7 +95,7 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                             Icon(Icons.Default.Close, contentDescription = "Скасувати виділення")
                         }
                     } else {
-                        IconButton(onClick = { onBackClick() }) {
+                        IconButton(onClick = { onClose() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                         }
                     }
@@ -97,9 +112,9 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                     } else {
                         IconButton(onClick = {
                             if (!isGridView && !rememberGridChoice) {
-                                savedGridColumns = 2
+                                onColumnsChange(2)
                             }
-                            isGridView = !isGridView
+                            onGridViewChange(!isGridView)
                         }) {
                             Icon(
                                 imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
@@ -142,13 +157,13 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                 GridSettingsPanel(
                     savedColumns = savedGridColumns,
                     onColumnsChange = {
-                        savedGridColumns = it
-                        isGridView = true
+                        onColumnsChange(it)
+                        onGridViewChange(true)
                     },
                     rememberChoice = rememberGridChoice,
-                    onRememberChange = { rememberGridChoice = it },
+                    onRememberChange = { onRememberChange(it) },
                     fontSizeScale = fontSizeScale,
-                    onFontSizeChange = { fontSizeScale = it }
+                    onFontSizeChange = { onFontSizeChange(it) }
                 )
             }
 
@@ -195,8 +210,7 @@ fun InventoryScreen(viewModel: ScannerViewModel, onBackClick: () -> Unit) {
                                                     selectedProducts + product
                                                 }
                                             } else {
-                                                viewModel.processBarcode(product.barcode)
-                                                onBackClick()
+                                                onProductSelected(product.barcode)
                                             }
                                         },
                                         onLongClick = {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -117,10 +119,40 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    var showInventory by remember { mutableStateOf(false) }
+    var showInventory by rememberSaveable { mutableStateOf(false) }
+    var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
+
+    // 🎯 Виносимо налаштування інвентарю сюди, щоб вони не скидалися!
+    var isGridView by rememberSaveable { mutableStateOf(false) }
+    var savedGridColumns by rememberSaveable { mutableIntStateOf(2) }
+    var rememberGridChoice by rememberSaveable { mutableStateOf(true) }
+    var fontSizeScale by rememberSaveable { mutableFloatStateOf(1.0f) }
+
+    val gridState = rememberLazyGridState()
 
     if (showInventory) {
-        InventoryScreen(viewModel = viewModel, onBackClick = { showInventory = false })
+        InventoryScreen(
+            viewModel = viewModel,
+            onClose = {
+                showInventory = false
+                isViewingFromInventory = false
+            },
+            onProductSelected = { barcode ->
+                isViewingFromInventory = true
+                showInventory = false
+                viewModel.processBarcode(barcode)
+            },
+            gridState = gridState,
+            // 🎯 Передаємо стани та функції для їх зміни
+            isGridView = isGridView,
+            onGridViewChange = { isGridView = it },
+            savedGridColumns = savedGridColumns,
+            onColumnsChange = { savedGridColumns = it },
+            rememberGridChoice = rememberGridChoice,
+            onRememberChange = { rememberGridChoice = it },
+            fontSizeScale = fontSizeScale,
+            onFontSizeChange = { fontSizeScale = it }
+        )
         return
     }
 
@@ -496,13 +528,18 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     OutlinedButton(
                         onClick = {
                             viewModel.clearCurrentProduct()
-                            rootFocusRequester.requestFocus()
+
+                            if (isViewingFromInventory) {
+                                showInventory = true
+                            } else {
+                                rootFocusRequester.requestFocus()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Закрити картку товару")
+                        Text(if (isViewingFromInventory) "Повернутися в інвентар" else "Закрити картку товару")
                     }
 
                     Card(

@@ -7,10 +7,10 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,12 +38,23 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     private val _lastScannedBarcode = MutableStateFlow<String?>(null)
     val lastScannedBarcode: StateFlow<String?> = _lastScannedBarcode
 
+    private var statusJob: Job? = null
+
     val allProducts: StateFlow<List<Product>> = dao.getAllProducts()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    private fun setStatus(message: String) {
+        statusJob?.cancel()
+        statusJob = viewModelScope.launch {
+            _saveStatus.value = message
+            delay(2000.milliseconds)
+            _saveStatus.value = null
+        }
+    }
 
     private fun deleteInternalFile(path: String) {
         if (path.startsWith("file://")) {
@@ -117,13 +128,11 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
 
                 zipOut.close()
 
-                _saveStatus.value = "Бекап створено: ${backupFile.absolutePath}"
-                delay(3000.milliseconds)
-                _saveStatus.value = null
+                setStatus("Бекап створено: ${backupFile.absolutePath}")
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                _saveStatus.value = "Помилка експорту: ${e.message}"
+                setStatus("Помилка експорту: ${e.message}")
             }
         }
     }
@@ -131,7 +140,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     fun shareBackup(context: Context) {
         val backupFile = File(context.getExternalFilesDir(null), "backup.zip")
         if (!backupFile.exists()) {
-            _saveStatus.value = "Файл бекапу не знайдено!"
+            setStatus("Файл бекапу не знайдено!")
             return
         }
 
@@ -182,10 +191,10 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
                 }
                 zis.close()
                 inputStream.close()
-                _saveStatus.value = "Бекап успішно відновлено!"
+                setStatus("Бекап успішно відновлено!")
             } catch (e: Exception) {
                 e.printStackTrace()
-                _saveStatus.value = "Помилка: ${e.message}"
+                setStatus("Помилка: ${e.message}")
             }
         }
     }
@@ -217,9 +226,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
             dao.insertProduct(newProduct)
             _scannedProduct.value = newProduct
             _lastScannedBarcode.value = null
-            _saveStatus.value = "Товар створено!"
-            delay(2000.milliseconds)
-            _saveStatus.value = null
+            setStatus("Товар створено!")
         }
     }
 
@@ -235,9 +242,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
         viewModelScope.launch {
             dao.insertProduct(updatedProduct)
             _scannedProduct.value = updatedProduct
-            _saveStatus.value = "Збережено!"
-            delay(2000.milliseconds)
-            _saveStatus.value = null
+            setStatus("Збережено!")
         }
     }
 
@@ -258,9 +263,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
         viewModelScope.launch {
             dao.insertProduct(updatedProduct)
             _scannedProduct.value = updatedProduct
-            _saveStatus.value = "Фото додано!"
-            delay(2000.milliseconds)
-            _saveStatus.value = null
+            setStatus("Фото додано!")
         }
     }
 
@@ -271,9 +274,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
         viewModelScope.launch {
             dao.insertProduct(updatedProduct)
             _scannedProduct.value = updatedProduct
-            _saveStatus.value = "Фото змінено!"
-            delay(2000.milliseconds)
-            _saveStatus.value = null
+            setStatus("Фото змінено!")
         }
     }
 
@@ -323,13 +324,11 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
                     dao.insertProduct(product)
                 }
 
-                _saveStatus.value = "Імпорт успішно завершено!"
-                delay(2000.milliseconds)
-                _saveStatus.value = null
+                setStatus("Імпорт успішно завершено!")
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                _saveStatus.value = "Помилка імпорту"
+                setStatus("Помилка імпорту")
             }
         }
     }
