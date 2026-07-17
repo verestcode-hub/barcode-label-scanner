@@ -12,7 +12,9 @@ data class Product(
     val useByDate: String = "",
     val groupPlu: String = "",
     val imagePath: String = "",
-    val imageHistory: List<String> = emptyList()
+    val imageHistory: List<String> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )
 
 data class JsonProduct(

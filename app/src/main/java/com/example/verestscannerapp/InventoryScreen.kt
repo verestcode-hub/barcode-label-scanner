@@ -14,13 +14,15 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +38,13 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
+enum class SortType(val title: String) {
+    NAME("За алфавітом (Назва)"),
+    PLU("За PLU-кодом"),
+    DATE_ADDED("За датою додавання"),
+    DATE_MODIFIED("За датою зміни")
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun InventoryScreen(
@@ -50,7 +59,11 @@ fun InventoryScreen(
     rememberGridChoice: Boolean,
     onRememberChange: (Boolean) -> Unit,
     fontSizeScale: Float,
-    onFontSizeChange: (Float) -> Unit
+    onFontSizeChange: (Float) -> Unit,
+    sortType: SortType,
+    onSortTypeChange: (SortType) -> Unit,
+    isSortAscending: Boolean,
+    onSortOrderChange: (Boolean) -> Unit
 ) {
     val products by viewModel.allProducts.collectAsState()
 
@@ -59,16 +72,30 @@ fun InventoryScreen(
     val isSelectionMode = selectedProducts.isNotEmpty()
 
     var showGridSettings by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
 
     val currentColumns = if (isGridView) savedGridColumns else 1
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
 
-    val filteredProducts = products.filter {
-        it.name.contains(searchQuery, ignoreCase = true) ||
-                it.barcode.contains(searchQuery, ignoreCase = true) ||
-                it.plu.contains(searchQuery, ignoreCase = true)
+    val sortedAndFilteredProducts = remember(products, searchQuery, sortType, isSortAscending) {
+        val filtered = products.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+                    it.barcode.contains(searchQuery, ignoreCase = true) ||
+                    it.plu.contains(searchQuery, ignoreCase = true)
+        }
+
+        val sorted = when (sortType) {
+            SortType.NAME -> filtered.sortedBy {
+                it.name.trim().replace("\"", "").replace("«", "").replace("»", "").lowercase()
+            }
+            SortType.PLU -> filtered.sortedBy { it.plu.toIntOrNull() ?: Int.MAX_VALUE }
+            SortType.DATE_ADDED -> filtered.sortedBy { it.createdAt }
+            SortType.DATE_MODIFIED -> filtered.sortedBy { it.updatedAt }
+        }
+
+        if (isSortAscending) sorted else sorted.reversed()
     }
 
     androidx.activity.compose.BackHandler {
@@ -79,6 +106,68 @@ fun InventoryScreen(
         }
     }
 
+    if (showSortSheet) {
+        ModalBottomSheet(onDismissRequest = { showSortSheet = false }) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(
+                    text = "Сортування",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                SortType.entries.forEach { option ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onSortTypeChange(option) }
+                            .padding(vertical = 12.dp, horizontal = 8.dp)
+                    ) {
+                        RadioButton(
+                            selected = sortType == option,
+                            onClick = { onSortTypeChange(option) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(option.title, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onSortOrderChange(!isSortAscending) }
+                        .padding(vertical = 12.dp, horizontal = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isSortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(if (isSortAscending) "За зростанням" else "За спаданням", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = if (isSortAscending) "(А-Я, 0-9, спочатку старі)" else "(Я-А, 9-0, спочатку нові)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = isSortAscending,
+                        onCheckedChange = { onSortOrderChange(it) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -86,7 +175,7 @@ fun InventoryScreen(
                     if (isSelectionMode) {
                         Text("Вибрано: ${selectedProducts.size}")
                     } else {
-                        Text("Інвентар (${filteredProducts.size})")
+                        Text("Інвентар (${sortedAndFilteredProducts.size})")
                     }
                 },
                 navigationIcon = {
@@ -110,6 +199,10 @@ fun InventoryScreen(
                             )
                         }
                     } else {
+                        IconButton(onClick = { showSortSheet = true }) {
+                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Сортувати")
+                        }
+
                         IconButton(onClick = {
                             if (!isGridView && !rememberGridChoice) {
                                 onColumnsChange(2)
@@ -156,14 +249,14 @@ fun InventoryScreen(
             if (showGridSettings && !isSelectionMode) {
                 GridSettingsPanel(
                     savedColumns = savedGridColumns,
-                    onColumnsChange = {
-                        onColumnsChange(it)
+                    onColumnsChange = { newCols ->
+                        onColumnsChange(newCols)
                         onGridViewChange(true)
                     },
                     rememberChoice = rememberGridChoice,
-                    onRememberChange = { onRememberChange(it) },
+                    onRememberChange = { newChoice -> onRememberChange(newChoice) },
                     fontSizeScale = fontSizeScale,
-                    onFontSizeChange = { onFontSizeChange(it) }
+                    onFontSizeChange = { newScale -> onFontSizeChange(newScale) }
                 )
             }
 
@@ -171,7 +264,7 @@ fun InventoryScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("База даних порожня", color = Color.Gray)
                 }
-            } else if (filteredProducts.isEmpty()) {
+            } else if (sortedAndFilteredProducts.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("За вашим запитом нічого не знайдено", color = Color.Gray)
                 }
@@ -187,7 +280,7 @@ fun InventoryScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(filteredProducts) { product ->
+                        items(sortedAndFilteredProducts) { product ->
                             val isSelected = selectedProducts.contains(product)
 
                             val imageHeight = when (currentColumns) {
@@ -338,7 +431,7 @@ fun InventoryScreen(
 
                     FastScroller(
                         gridState = gridState,
-                        totalItems = filteredProducts.size,
+                        totalItems = sortedAndFilteredProducts.size,
                         modifier = Modifier.align(Alignment.CenterEnd)
                     )
                 }

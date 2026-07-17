@@ -236,9 +236,9 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
             name = name.trim(),
             plu = plu.trim(),
             useByDate = useByDate.trim(),
-            groupPlu = groupPlu.trim()
+            groupPlu = groupPlu.trim(),
+            updatedAt = System.currentTimeMillis()
         )
-
         viewModelScope.launch {
             dao.insertProduct(updatedProduct)
             _scannedProduct.value = updatedProduct

@@ -28,15 +28,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,10 +75,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -119,14 +119,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
+    // 🎯 Всі ці стани тепер зберігаються навіть при повороті екрана!
     var showInventory by rememberSaveable { mutableStateOf(false) }
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
 
-    // 🎯 Виносимо налаштування інвентарю сюди, щоб вони не скидалися!
     var isGridView by rememberSaveable { mutableStateOf(false) }
     var savedGridColumns by rememberSaveable { mutableIntStateOf(2) }
     var rememberGridChoice by rememberSaveable { mutableStateOf(true) }
     var fontSizeScale by rememberSaveable { mutableFloatStateOf(1.0f) }
+
+    var sortType by rememberSaveable { mutableStateOf(SortType.DATE_ADDED) }
+    var isSortAscending by rememberSaveable { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
 
@@ -143,7 +146,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 viewModel.processBarcode(barcode)
             },
             gridState = gridState,
-            // 🎯 Передаємо стани та функції для їх зміни
             isGridView = isGridView,
             onGridViewChange = { isGridView = it },
             savedGridColumns = savedGridColumns,
@@ -151,7 +153,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             rememberGridChoice = rememberGridChoice,
             onRememberChange = { rememberGridChoice = it },
             fontSizeScale = fontSizeScale,
-            onFontSizeChange = { fontSizeScale = it }
+            onFontSizeChange = { fontSizeScale = it },
+            sortType = sortType,
+            onSortTypeChange = { sortType = it },
+            isSortAscending = isSortAscending,
+            onSortOrderChange = { isSortAscending = it }
         )
         return
     }
@@ -817,7 +823,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         TextButton(onClick = {
                                             isCreating = false
-                                            prefilledName = "" // Очищаємо кеш назви при скасуванні
+                                            prefilledName = ""
                                             viewModel.clearCurrentProduct()
                                         }) { Text("Скасувати") }
 
