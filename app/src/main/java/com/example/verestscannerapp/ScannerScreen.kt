@@ -133,6 +133,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     var showScanButton by rememberSaveable { mutableStateOf(true) }
     var showMagicButton by rememberSaveable { mutableStateOf(true) }
 
+    val currentTheme by viewModel.themeMode.collectAsState()
+    var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+
     val gridState = rememberLazyGridState()
 
     if (showInventory) {
@@ -322,6 +325,40 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         }
     }
 
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Тема") },
+            text = {
+                Column {
+                    ThemeMode.entries.forEach { mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setThemeMode(mode)
+                                    showThemeDialog = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = currentTheme == mode, onClick = null)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(when (mode) {
+                                ThemeMode.SYSTEM -> "Системна"
+                                ThemeMode.LIGHT -> "Світла"
+                                ThemeMode.DARK -> "Темна"
+                            })
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text("Скасувати") }
+            }
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -332,82 +369,62 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.headlineSmall
                 )
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
 
+                // 1. Головна дія (Інвентар) - виділена окремо
                 NavigationDrawerItem(
-                    icon = { Icon(imageVector = Icons.Default.List, contentDescription = "Інвентар") },
-                    label = { Text("Показати весь інвентар") },
+                    icon = { Icon(imageVector = Icons.Default.List, contentDescription = null) },
+                    label = { Text("Показати весь інвентар", fontWeight = FontWeight.Bold) },
                     selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        showInventory = true
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
-
-                NavigationDrawerItem(
-                    icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = "Імпорт") },
-                    label = { Text("Імпорт JSON") },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        viewModel.importDataFromJson(context)
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
-
-                NavigationDrawerItem(
-                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Бекап") },
-                    label = { Text("Зробити і надіслати бекап") },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        viewModel.exportBackup(context)
-                        scope.launch {
-                            delay(1000)
-                            viewModel.shareBackup(context)
-                        }
-                    },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
-
-                NavigationDrawerItem(
-                    icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = "Відновити") },
-                    label = { Text("Відновити з бекапу") },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        backupPickerLauncher.launch(arrayOf("application/zip"))
-                    },
+                    onClick = { scope.launch { drawerState.close() }; showInventory = true },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text(
-                    text = "Налаштування вигляду",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Показувати 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
+                // 2. Налаштування вигляду (Свічі)
+                Text("Вигляд", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Кнопка 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = showScanButton, onCheckedChange = { showScanButton = it })
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Показувати 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Кнопка 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = showMagicButton, onCheckedChange = { showMagicButton = it })
                 }
+
+                ListItem(
+                    headlineContent = { Text("Тема") },
+                    supportingContent = { Text(when(currentTheme) { ThemeMode.SYSTEM -> "Системна"; ThemeMode.LIGHT -> "Світла"; ThemeMode.DARK -> "Темна" }) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { showThemeDialog = true }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("Дані", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+
+                NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = null) },
+                    label = { Text("Імпорт JSON") },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; viewModel.importDataFromJson(context) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = null) },
+                    label = { Text("Зробити бекап") },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; viewModel.exportBackup(context); scope.launch { delay(1000); viewModel.shareBackup(context) } },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = null) },
+                    label = { Text("Відновити з бекапу") },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; backupPickerLauncher.launch(arrayOf("application/zip")) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
             }
         }
     ) {

@@ -1,20 +1,29 @@
 package com.example.verestscannerapp
 
+import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Rect
+import android.net.Uri
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -22,13 +31,36 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import kotlin.time.Duration.Companion.milliseconds
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
-import android.graphics.Rect
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.milliseconds
 
-class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
+// Використовуємо Property Delegate для DataStore
+val Context.dataStore by preferencesDataStore(name = "settings")
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+class ScannerViewModel(application: Application, private val dao: ProductDao) : AndroidViewModel(application) {
+
+    // Стан теми
+    private val THEME_KEY = stringPreferencesKey("theme_mode")
+    val themeMode: StateFlow<ThemeMode> = application.dataStore.data
+        .map { prefs ->
+            try {
+                ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name)
+            } catch (e: Exception) {
+                ThemeMode.SYSTEM
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            getApplication<Application>().dataStore.edit { prefs ->
+                prefs[THEME_KEY] = mode.name
+            }
+        }
+    }
+
     private val _scannedProduct = MutableStateFlow<Product?>(null)
     val scannedProduct: StateFlow<Product?> = _scannedProduct
 
@@ -41,11 +73,7 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     private var statusJob: Job? = null
 
     val allProducts: StateFlow<List<Product>> = dao.getAllProducts()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private fun setStatus(message: String) {
         statusJob?.cancel()
@@ -334,11 +362,14 @@ class ScannerViewModel(private val dao: ProductDao) : ViewModel() {
     }
 }
 
-class ScannerViewModelFactory(private val dao: ProductDao) : ViewModelProvider.Factory {
+class ScannerViewModelFactory(
+    private val application: Application,
+    private val dao: ProductDao
+) : ViewModelProvider.AndroidViewModelFactory(application) {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ScannerViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ScannerViewModel(dao) as T
+            return ScannerViewModel(application, dao) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
