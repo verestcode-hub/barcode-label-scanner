@@ -119,7 +119,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // 🎯 Всі ці стани тепер зберігаються навіть при повороті екрана!
     var showInventory by rememberSaveable { mutableStateOf(false) }
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
 
@@ -130,6 +129,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     var sortType by rememberSaveable { mutableStateOf(SortType.DATE_ADDED) }
     var isSortAscending by rememberSaveable { mutableStateOf(false) }
+
+    var showScanButton by rememberSaveable { mutableStateOf(true) }
+    var showMagicButton by rememberSaveable { mutableStateOf(true) }
 
     val gridState = rememberLazyGridState()
 
@@ -380,6 +382,32 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    text = "Налаштування вигляду",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Показувати 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = showScanButton, onCheckedChange = { showScanButton = it })
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Показувати 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = showMagicButton, onCheckedChange = { showMagicButton = it })
+                }
             }
         }
     ) {
@@ -478,52 +506,71 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Розпізнавання етикетки...", style = MaterialTheme.typography.bodyLarge)
                 } else if (scannedProduct == null && lastScannedBarcode == null) {
-                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(
-                        onClick = {
-                            isCreating = false
-                            scanner.startScan()
-                                .addOnSuccessListener { barcode ->
-                                    barcode.rawValue?.let { viewModel.processBarcode(it) }
-                                }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Знайти товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
+                    if (showScanButton) {
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(
-                        onClick = {
-                            magicCropLauncher.launch(
-                                CropImageContractOptions(
-                                    uri = null,
-                                    cropImageOptions = CropImageOptions().apply {
-                                        imageSourceIncludeCamera = true
-                                        imageSourceIncludeGallery = false
-                                        guidelines = CropImageView.Guidelines.ON
-                                        allowRotation = true
-                                        allowCounterRotation = true
-                                        multiTouchEnabled = true
+                        Button(
+                            onClick = {
+                                isCreating = false
+                                scanner.startScan()
+                                    .addOnSuccessListener { barcode ->
+                                        barcode.rawValue?.let { viewModel.processBarcode(it) }
                                     }
-                                )
+                            },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Створити з фото етикетки", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Знайти товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    if (showMagicButton) {
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                magicCropLauncher.launch(
+                                    CropImageContractOptions(
+                                        uri = null,
+                                        cropImageOptions = CropImageOptions().apply {
+                                            imageSourceIncludeCamera = true
+                                            imageSourceIncludeGallery = false
+                                            guidelines = CropImageView.Guidelines.ON
+                                            allowRotation = true
+                                            allowCounterRotation = true
+                                            multiTouchEnabled = true
+                                        }
+                                    )
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Створити з фото етикетки",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
                 saveStatus?.let {
                     Text(text = it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
@@ -844,34 +891,46 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
-                                Button(
-                                    onClick = { isCreating = true },
-                                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Створити новий товар")
+                                if (showScanButton) {
+                                    Button(
+                                        onClick = { isCreating = true },
+                                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Створити новий товар")
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                OutlinedButton(
-                                    onClick = {
-                                        scanner.startScan()
-                                            .addOnSuccessListener { barcode ->
-                                                barcode.rawValue?.let {
-                                                    viewModel.processBarcode(it)
+                                if (showMagicButton) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            scanner.startScan()
+                                                .addOnSuccessListener { barcode ->
+                                                    barcode.rawValue?.let {
+                                                        viewModel.processBarcode(it)
+                                                    }
                                                 }
-                                            }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Сканувати інший")
-                                }
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.QrCodeScanner,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Сканувати інший")
+                                    }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
 
                                 TextButton(onClick = { viewModel.clearCurrentProduct() }) {
                                     Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
