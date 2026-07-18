@@ -255,12 +255,14 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         }
     )
 
+    var tempImageFile by remember { mutableStateOf<File?>(null) }
+
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview(),
-        onResult = { bitmap ->
-            bitmap?.let {
-                val savedUriString = saveBitmapToInternalStorage(context, it)
-                if (savedUriString.isNotEmpty()) {
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                tempImageFile?.let { file ->
+                    val savedUriString = Uri.fromFile(file).toString()
                     viewModel.updateProductImage(savedUriString)
                 }
             }
@@ -299,7 +301,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable {
                         showBottomSheet = false
-                        cameraLauncher.launch(null)
+
+                        val photoFile = File(context.filesDir, "IMG_${UUID.randomUUID()}.jpg")
+                        tempImageFile = photoFile
+
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            photoFile
+                        )
+
+                        cameraLauncher.launch(uri)
                     }.padding(vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -376,7 +388,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     style = MaterialTheme.typography.headlineSmall
                 )
 
-                // 1. Головна дія (Інвентар) - виділена окремо
                 NavigationDrawerItem(
                     icon = { Icon(imageVector = Icons.Default.List, contentDescription = null) },
                     label = { Text("Показати весь інвентар", fontWeight = FontWeight.Bold) },
