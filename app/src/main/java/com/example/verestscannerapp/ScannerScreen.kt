@@ -1,6 +1,5 @@
 package com.example.verestscannerapp
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -27,8 +26,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -75,6 +72,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import androidx.compose.material.icons.filled.ArrowDownward
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -121,9 +119,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     var showInventory by rememberSaveable { mutableStateOf(false) }
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
-    var isGridView by rememberSaveable { mutableStateOf(false) }
 
     // Зчитуємо налаштування з ViewModel (з DataStore)
+    val isGridView by viewModel.isGridView.collectAsState()
     val savedGridColumns by viewModel.savedGridColumns.collectAsState()
     val rememberGridChoice by viewModel.rememberGridChoice.collectAsState()
     val fontSizeScale by viewModel.fontSizeScale.collectAsState()
@@ -132,8 +130,14 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val sortType = try { SortType.valueOf(sortTypeString) } catch (e: Exception) { SortType.DATE_ADDED }
     val isSortAscending by viewModel.isSortAscending.collectAsState()
 
+    // Кнопки головного екрана
     val showScanButton by viewModel.showScanButton.collectAsState()
     val showMagicButton by viewModel.showMagicButton.collectAsState()
+
+    // Кнопки екрана "Товар не знайдено" (Ось ті самі змінні, яких не вистачало!)
+    val showCreateNewBtn by viewModel.showCreateNewBtn.collectAsState()
+    val showScanAnotherBtn by viewModel.showScanAnotherBtn.collectAsState()
+
     val currentTheme by viewModel.themeMode.collectAsState()
 
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
@@ -154,8 +158,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             },
             gridState = gridState,
             isGridView = isGridView,
-            onGridViewChange = { isGridView = it },
-            // Передаємо функції з ViewModel для збереження в DataStore
+            onGridViewChange = { viewModel.setIsGridView(it) },
             savedGridColumns = savedGridColumns,
             onColumnsChange = { viewModel.setSavedGridColumns(it) },
             rememberGridChoice = rememberGridChoice,
@@ -385,7 +388,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                 // 2. Налаштування вигляду (Свічі з записом у ViewModel)
-                Text("Вигляд", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text("Вигляд (Головний екран)", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Кнопка 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
@@ -394,6 +397,19 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Кнопка 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = showMagicButton, onCheckedChange = { viewModel.setShowMagicButton(it) })
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                Text("Вигляд (Товар не знайдено)", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Кнопка 'Створити новий'", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = showCreateNewBtn, onCheckedChange = { viewModel.setShowCreateNewBtn(it) })
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Кнопка 'Сканувати інший'", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = showScanAnotherBtn, onCheckedChange = { viewModel.setShowScanAnotherBtn(it) })
                 }
 
                 ListItem(
@@ -523,7 +539,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (isMagicScanning) {
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Розпізнавання етикетки...", style = MaterialTheme.typography.bodyLarge)
@@ -549,6 +565,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Знайти товар", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
+                    }
+
+                    if (showScanButton && showMagicButton) {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
 
                     if (showMagicButton) {
@@ -909,7 +929,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
-                                if (showScanButton) {
+                                if (showCreateNewBtn) {
                                     Button(
                                         onClick = { isCreating = true },
                                         modifier = Modifier.fillMaxWidth().height(50.dp)
@@ -923,10 +943,12 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         Text("Створити новий товар")
                                     }
 
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    if (showScanAnotherBtn) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                    }
                                 }
 
-                                if (showMagicButton) {
+                                if (showScanAnotherBtn) {
                                     OutlinedButton(
                                         onClick = {
                                             scanner.startScan()
@@ -946,9 +968,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text("Сканувати інший")
                                     }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
+
+                                Spacer(modifier = Modifier.height(12.dp))
 
                                 TextButton(onClick = { viewModel.clearCurrentProduct() }) {
                                     Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))

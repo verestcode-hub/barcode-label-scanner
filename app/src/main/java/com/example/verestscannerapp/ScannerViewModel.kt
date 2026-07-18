@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
 import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -36,15 +37,24 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 class ScannerViewModel(application: Application, private val dao: ProductDao) : AndroidViewModel(application) {
 
-    // --- НАЛАШТУВАННЯ DATASTORE (Ключі) ---
     private val THEME_KEY = stringPreferencesKey("theme_mode")
+
+    // Головний екран
     private val SHOW_SCAN_BTN_KEY = booleanPreferencesKey("show_scan_btn")
     private val SHOW_MAGIC_BTN_KEY = booleanPreferencesKey("show_magic_btn")
+
+    // Екран "Товар не знайдено"
+    private val SHOW_CREATE_NEW_BTN_KEY = booleanPreferencesKey("show_create_new_btn")
+    private val SHOW_SCAN_ANOTHER_BTN_KEY = booleanPreferencesKey("show_scan_another_btn")
+
+    // Інвентар
+    private val IS_GRID_VIEW_KEY = booleanPreferencesKey("is_grid_view")
     private val GRID_COLUMNS_KEY = intPreferencesKey("grid_columns")
     private val REMEMBER_GRID_CHOICE_KEY = booleanPreferencesKey("remember_grid_choice")
     private val FONT_SIZE_SCALE_KEY = floatPreferencesKey("font_size_scale")
     private val SORT_TYPE_KEY = stringPreferencesKey("sort_type")
     private val IS_SORT_ASCENDING_KEY = booleanPreferencesKey("is_sort_ascending")
+
 
     // --- СТАНИ НАЛАШТУВАНЬ (StateFlow) ---
 
@@ -59,6 +69,18 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     val showMagicButton: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
         prefs[SHOW_MAGIC_BTN_KEY] ?: true
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val showCreateNewBtn: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[SHOW_CREATE_NEW_BTN_KEY] ?: true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val showScanAnotherBtn: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[SHOW_SCAN_ANOTHER_BTN_KEY] ?: true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val isGridView: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[IS_GRID_VIEW_KEY] ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val savedGridColumns: StateFlow<Int> = application.dataStore.data.map { prefs ->
         prefs[GRID_COLUMNS_KEY] ?: 2
@@ -92,6 +114,15 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     fun setShowMagicButton(show: Boolean) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[SHOW_MAGIC_BTN_KEY] = show }
     }
+    fun setShowCreateNewBtn(show: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[SHOW_CREATE_NEW_BTN_KEY] = show }
+    }
+    fun setShowScanAnotherBtn(show: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[SHOW_SCAN_ANOTHER_BTN_KEY] = show }
+    }
+    fun setIsGridView(isGrid: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[IS_GRID_VIEW_KEY] = isGrid }
+    }
     fun setSavedGridColumns(columns: Int) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[GRID_COLUMNS_KEY] = columns }
     }
@@ -107,9 +138,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     fun setIsSortAscending(isAscending: Boolean) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[IS_SORT_ASCENDING_KEY] = isAscending }
     }
-
-
-    // --- ІСНУЮЧА ЛОГІКА ДОДАТКУ ---
 
     private val _scannedProduct = MutableStateFlow<Product?>(null)
     val scannedProduct: StateFlow<Product?> = _scannedProduct
