@@ -121,19 +121,21 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     var showInventory by rememberSaveable { mutableStateOf(false) }
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
-
     var isGridView by rememberSaveable { mutableStateOf(false) }
-    var savedGridColumns by rememberSaveable { mutableIntStateOf(2) }
-    var rememberGridChoice by rememberSaveable { mutableStateOf(true) }
-    var fontSizeScale by rememberSaveable { mutableFloatStateOf(1.0f) }
 
-    var sortType by rememberSaveable { mutableStateOf(SortType.DATE_ADDED) }
-    var isSortAscending by rememberSaveable { mutableStateOf(false) }
+    // Зчитуємо налаштування з ViewModel (з DataStore)
+    val savedGridColumns by viewModel.savedGridColumns.collectAsState()
+    val rememberGridChoice by viewModel.rememberGridChoice.collectAsState()
+    val fontSizeScale by viewModel.fontSizeScale.collectAsState()
 
-    var showScanButton by rememberSaveable { mutableStateOf(true) }
-    var showMagicButton by rememberSaveable { mutableStateOf(true) }
+    val sortTypeString by viewModel.sortType.collectAsState()
+    val sortType = try { SortType.valueOf(sortTypeString) } catch (e: Exception) { SortType.DATE_ADDED }
+    val isSortAscending by viewModel.isSortAscending.collectAsState()
 
+    val showScanButton by viewModel.showScanButton.collectAsState()
+    val showMagicButton by viewModel.showMagicButton.collectAsState()
     val currentTheme by viewModel.themeMode.collectAsState()
+
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
@@ -153,16 +155,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             gridState = gridState,
             isGridView = isGridView,
             onGridViewChange = { isGridView = it },
+            // Передаємо функції з ViewModel для збереження в DataStore
             savedGridColumns = savedGridColumns,
-            onColumnsChange = { savedGridColumns = it },
+            onColumnsChange = { viewModel.setSavedGridColumns(it) },
             rememberGridChoice = rememberGridChoice,
-            onRememberChange = { rememberGridChoice = it },
+            onRememberChange = { viewModel.setRememberGridChoice(it) },
             fontSizeScale = fontSizeScale,
-            onFontSizeChange = { fontSizeScale = it },
+            onFontSizeChange = { viewModel.setFontSizeScale(it) },
             sortType = sortType,
-            onSortTypeChange = { sortType = it },
+            onSortTypeChange = { viewModel.setSortType(it.name) },
             isSortAscending = isSortAscending,
-            onSortOrderChange = { isSortAscending = it }
+            onSortOrderChange = { viewModel.setIsSortAscending(it) }
         )
         return
     }
@@ -381,16 +384,16 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                // 2. Налаштування вигляду (Свічі)
+                // 2. Налаштування вигляду (Свічі з записом у ViewModel)
                 Text("Вигляд", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Кнопка 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showScanButton, onCheckedChange = { showScanButton = it })
+                    Switch(checked = showScanButton, onCheckedChange = { viewModel.setShowScanButton(it) })
                 }
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Кнопка 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showMagicButton, onCheckedChange = { showMagicButton = it })
+                    Switch(checked = showMagicButton, onCheckedChange = { viewModel.setShowMagicButton(it) })
                 }
 
                 ListItem(
@@ -517,6 +520,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     }
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
                 if (isMagicScanning) {
                     Spacer(modifier = Modifier.height(32.dp))
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -525,9 +530,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 } else if (scannedProduct == null && lastScannedBarcode == null) {
 
                     if (showScanButton) {
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
                         Button(
                             onClick = {
                                 isCreating = false
@@ -550,9 +552,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     }
 
                     if (showMagicButton) {
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
                         Button(
                             onClick = {
                                 magicCropLauncher.launch(
@@ -586,7 +585,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    if (showScanButton || showMagicButton) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
 
                 saveStatus?.let {

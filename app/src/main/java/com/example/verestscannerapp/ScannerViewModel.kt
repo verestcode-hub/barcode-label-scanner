@@ -6,9 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -34,32 +32,84 @@ import java.util.zip.ZipOutputStream
 import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
 
-// Використовуємо Property Delegate для DataStore
-val Context.dataStore by preferencesDataStore(name = "settings")
-
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 class ScannerViewModel(application: Application, private val dao: ProductDao) : AndroidViewModel(application) {
 
-    // Стан теми
+    // --- НАЛАШТУВАННЯ DATASTORE (Ключі) ---
     private val THEME_KEY = stringPreferencesKey("theme_mode")
-    val themeMode: StateFlow<ThemeMode> = application.dataStore.data
-        .map { prefs ->
-            try {
-                ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name)
-            } catch (e: Exception) {
-                ThemeMode.SYSTEM
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+    private val SHOW_SCAN_BTN_KEY = booleanPreferencesKey("show_scan_btn")
+    private val SHOW_MAGIC_BTN_KEY = booleanPreferencesKey("show_magic_btn")
+    private val GRID_COLUMNS_KEY = intPreferencesKey("grid_columns")
+    private val REMEMBER_GRID_CHOICE_KEY = booleanPreferencesKey("remember_grid_choice")
+    private val FONT_SIZE_SCALE_KEY = floatPreferencesKey("font_size_scale")
+    private val SORT_TYPE_KEY = stringPreferencesKey("sort_type")
+    private val IS_SORT_ASCENDING_KEY = booleanPreferencesKey("is_sort_ascending")
 
-    fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch {
-            getApplication<Application>().dataStore.edit { prefs ->
-                prefs[THEME_KEY] = mode.name
-            }
-        }
+    // --- СТАНИ НАЛАШТУВАНЬ (StateFlow) ---
+
+    val themeMode: StateFlow<ThemeMode> = application.dataStore.data.map { prefs ->
+        try { ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name) } catch (e: Exception) { ThemeMode.SYSTEM }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+
+    val showScanButton: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[SHOW_SCAN_BTN_KEY] ?: true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val showMagicButton: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[SHOW_MAGIC_BTN_KEY] ?: true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val savedGridColumns: StateFlow<Int> = application.dataStore.data.map { prefs ->
+        prefs[GRID_COLUMNS_KEY] ?: 2
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2)
+
+    val rememberGridChoice: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[REMEMBER_GRID_CHOICE_KEY] ?: true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val fontSizeScale: StateFlow<Float> = application.dataStore.data.map { prefs ->
+        prefs[FONT_SIZE_SCALE_KEY] ?: 1.0f
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
+
+    val sortType: StateFlow<String> = application.dataStore.data.map { prefs ->
+        prefs[SORT_TYPE_KEY] ?: "DATE_ADDED"
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DATE_ADDED")
+
+    val isSortAscending: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[IS_SORT_ASCENDING_KEY] ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+
+    // --- ФУНКЦІЇ ДЛЯ ЗБЕРЕЖЕННЯ НАЛАШТУВАНЬ ---
+
+    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[THEME_KEY] = mode.name }
     }
+    fun setShowScanButton(show: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[SHOW_SCAN_BTN_KEY] = show }
+    }
+    fun setShowMagicButton(show: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[SHOW_MAGIC_BTN_KEY] = show }
+    }
+    fun setSavedGridColumns(columns: Int) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[GRID_COLUMNS_KEY] = columns }
+    }
+    fun setRememberGridChoice(remember: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[REMEMBER_GRID_CHOICE_KEY] = remember }
+    }
+    fun setFontSizeScale(scale: Float) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[FONT_SIZE_SCALE_KEY] = scale }
+    }
+    fun setSortType(type: String) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[SORT_TYPE_KEY] = type }
+    }
+    fun setIsSortAscending(isAscending: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[IS_SORT_ASCENDING_KEY] = isAscending }
+    }
+
+
+    // --- ІСНУЮЧА ЛОГІКА ДОДАТКУ ---
 
     private val _scannedProduct = MutableStateFlow<Product?>(null)
     val scannedProduct: StateFlow<Product?> = _scannedProduct

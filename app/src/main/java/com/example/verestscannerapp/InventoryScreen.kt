@@ -509,7 +509,8 @@ fun GridSettingsPanel(
             .padding(16.dp)
     ) {
         Text("Стовпців: $savedColumns", fontWeight = FontWeight.Bold)
-        Slider(value = savedColumns.toFloat(), onValueChange = { onColumnsChange(it.toInt()) }, valueRange = 2f..6f, steps = 4)
+        // Виправлено: steps = 3 (це 3 проміжні кроки між 2 та 6: тобто 3, 4, 5)
+        Slider(value = savedColumns.toFloat(), onValueChange = { onColumnsChange(it.toInt()) }, valueRange = 2f..6f, steps = 3)
 
         Spacer(modifier = Modifier.height(16.dp))
 
