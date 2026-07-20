@@ -15,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -25,10 +27,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
@@ -37,7 +41,9 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,7 +78,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
-import androidx.compose.material.icons.filled.ArrowDownward
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -119,8 +124,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     var showInventory by rememberSaveable { mutableStateOf(false) }
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
+    var showSettingsScreen by rememberSaveable { mutableStateOf(false) }
 
-    // Зчитуємо налаштування з ViewModel (з DataStore)
     val isGridView by viewModel.isGridView.collectAsState()
     val savedGridColumns by viewModel.savedGridColumns.collectAsState()
     val rememberGridChoice by viewModel.rememberGridChoice.collectAsState()
@@ -130,11 +135,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val sortType = try { SortType.valueOf(sortTypeString) } catch (e: Exception) { SortType.DATE_ADDED }
     val isSortAscending by viewModel.isSortAscending.collectAsState()
 
-    // Кнопки головного екрана
     val showScanButton by viewModel.showScanButton.collectAsState()
     val showMagicButton by viewModel.showMagicButton.collectAsState()
-
-    // Кнопки екрана "Товар не знайдено" (Ось ті самі змінні, яких не вистачало!)
     val showCreateNewBtn by viewModel.showCreateNewBtn.collectAsState()
     val showScanAnotherBtn by viewModel.showScanAnotherBtn.collectAsState()
 
@@ -143,6 +145,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
+
+    if (showSettingsScreen) {
+        SettingsScreen(viewModel = viewModel, onClose = { showSettingsScreen = false })
+        return
+    }
 
     if (showInventory) {
         InventoryScreen(
@@ -249,8 +256,24 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
             uri?.let {
-                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                viewModel.updateProductImage(it.toString())
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(it)
+                        val filename = "IMG_${UUID.randomUUID()}.jpg"
+                        val file = File(context.filesDir, filename)
+                        val outputStream = FileOutputStream(file)
+                        inputStream?.use { input ->
+                            outputStream.use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            viewModel.updateProductImage(Uri.fromFile(file).toString())
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             }
         }
     )
@@ -279,6 +302,15 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         }
     )
 
+    val jsonPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let {
+                viewModel.importCustomJson(context, it)
+            }
+        }
+    )
+
     LaunchedEffect(isManualInputMode) {
         delay(100)
         if (!isManualInputMode) {
@@ -301,16 +333,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable {
                         showBottomSheet = false
-
                         val photoFile = File(context.filesDir, "IMG_${UUID.randomUUID()}.jpg")
                         tempImageFile = photoFile
-
                         val uri = androidx.core.content.FileProvider.getUriForFile(
                             context,
                             "${context.packageName}.provider",
                             photoFile
                         )
-
                         cameraLauncher.launch(uri)
                     }.padding(vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -396,32 +425,14 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("Налаштування", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = { scope.launch { drawerState.close() }; showSettingsScreen = true },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
 
-                // 2. Налаштування вигляду (Свічі з записом у ViewModel)
-                Text("Вигляд (Головний екран)", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Кнопка 'Знайти товар'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showScanButton, onCheckedChange = { viewModel.setShowScanButton(it) })
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Кнопка 'Створити з фото'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showMagicButton, onCheckedChange = { viewModel.setShowMagicButton(it) })
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                Text("Вигляд (Товар не знайдено)", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Кнопка 'Створити новий'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showCreateNewBtn, onCheckedChange = { viewModel.setShowCreateNewBtn(it) })
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Кнопка 'Сканувати інший'", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showScanAnotherBtn, onCheckedChange = { viewModel.setShowScanAnotherBtn(it) })
-                }
 
                 ListItem(
                     headlineContent = { Text("Тема") },
@@ -441,6 +452,18 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     onClick = { scope.launch { drawerState.close() }; viewModel.importDataFromJson(context) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
+
+                NavigationDrawerItem(
+                    icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = null) },
+                    label = { Text("Імпорт Excel (JSON)") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        jsonPickerLauncher.launch("*/*")
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
                 NavigationDrawerItem(
                     icon = { Icon(imageVector = Icons.Default.Share, contentDescription = null) },
                     label = { Text("Зробити бекап") },
@@ -656,6 +679,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 var dateInput by remember(product.barcode) { mutableStateOf(product.useByDate) }
                                 var groupInput by remember(product.barcode) { mutableStateOf(product.groupPlu) }
 
+                                val networks by viewModel.customNetworks.collectAsState()
+                                var expandedNetwork by remember { mutableStateOf(false) }
+
                                 OutlinedTextField(
                                     value = nameInput,
                                     onValueChange = { nameInput = it },
@@ -677,13 +703,44 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = groupInput,
-                                    onValueChange = { groupInput = it },
-                                    label = { Text("Мережа / Група") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
+
+                                ExposedDropdownMenuBox(
+                                    expanded = expandedNetwork,
+                                    onExpandedChange = {
+                                        expandedNetwork = it
+                                        if (it) {
+                                            keyboardController?.hide()
+                                        }
+                                    }
+                                ) {
+                                    OutlinedTextField(
+                                        value = groupInput,
+                                        onValueChange = { groupInput = it },
+                                        label = { Text("Мережа / Група") },
+                                        readOnly = expandedNetwork,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(),
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedNetwork) },
+                                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = expandedNetwork,
+                                        onDismissRequest = { expandedNetwork = false }
+                                    ) {
+                                        networks.forEach { selectionOption ->
+                                            DropdownMenuItem(
+                                                text = { Text(selectionOption) },
+                                                onClick = {
+                                                    groupInput = selectionOption
+                                                    expandedNetwork = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
                                 Button(onClick = {
                                     viewModel.updateProductDetails(nameInput, pluInput, dateInput, groupInput)
                                     isEditing = false

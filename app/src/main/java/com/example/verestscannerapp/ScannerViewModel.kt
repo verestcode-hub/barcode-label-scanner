@@ -39,15 +39,12 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     private val THEME_KEY = stringPreferencesKey("theme_mode")
 
-    // Головний екран
     private val SHOW_SCAN_BTN_KEY = booleanPreferencesKey("show_scan_btn")
     private val SHOW_MAGIC_BTN_KEY = booleanPreferencesKey("show_magic_btn")
 
-    // Екран "Товар не знайдено"
     private val SHOW_CREATE_NEW_BTN_KEY = booleanPreferencesKey("show_create_new_btn")
     private val SHOW_SCAN_ANOTHER_BTN_KEY = booleanPreferencesKey("show_scan_another_btn")
 
-    // Інвентар
     private val IS_GRID_VIEW_KEY = booleanPreferencesKey("is_grid_view")
     private val GRID_COLUMNS_KEY = intPreferencesKey("grid_columns")
     private val REMEMBER_GRID_CHOICE_KEY = booleanPreferencesKey("remember_grid_choice")
@@ -55,8 +52,8 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     private val SORT_TYPE_KEY = stringPreferencesKey("sort_type")
     private val IS_SORT_ASCENDING_KEY = booleanPreferencesKey("is_sort_ascending")
 
+    private val NETWORKS_KEY = stringSetPreferencesKey("custom_networks")
 
-    // --- СТАНИ НАЛАШТУВАНЬ (StateFlow) ---
 
     val themeMode: StateFlow<ThemeMode> = application.dataStore.data.map { prefs ->
         try { ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name) } catch (e: Exception) { ThemeMode.SYSTEM }
@@ -102,8 +99,10 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         prefs[IS_SORT_ASCENDING_KEY] ?: false
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val customNetworks: StateFlow<Set<String>> = application.dataStore.data.map { prefs ->
+        prefs[NETWORKS_KEY] ?: setOf("Verest", "АТБ", "Сільпо", "Novus", "Аврора")
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), setOf("Verest", "АТБ", "Сільпо", "Novus", "Аврора"))
 
-    // --- ФУНКЦІЇ ДЛЯ ЗБЕРЕЖЕННЯ НАЛАШТУВАНЬ ---
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[THEME_KEY] = mode.name }
@@ -137,6 +136,23 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     }
     fun setIsSortAscending(isAscending: Boolean) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[IS_SORT_ASCENDING_KEY] = isAscending }
+    }
+
+    fun addNetwork(network: String) = viewModelScope.launch {
+        val trimmed = network.trim()
+        if (trimmed.isNotEmpty()) {
+            getApplication<Application>().dataStore.edit { prefs ->
+                val current = prefs[NETWORKS_KEY] ?: emptySet()
+                prefs[NETWORKS_KEY] = current + trimmed
+            }
+        }
+    }
+
+    fun removeNetwork(network: String) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { prefs ->
+            val current = prefs[NETWORKS_KEY] ?: emptySet()
+            prefs[NETWORKS_KEY] = current - network
+        }
     }
 
     private val _scannedProduct = MutableStateFlow<Product?>(null)
@@ -210,6 +226,42 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             .addOnFailureListener {
                 onResult(null)
             }
+    }
+
+    fun updateOrInsertProduct(newProductData: JsonProduct) {
+        viewModelScope.launch {
+            // ФІЛЬТР ВІД СМІТТЯ: Якщо рядок з Excel повністю порожній - ігноруємо його
+            val isNameEmpty = newProductData.NAME.isNullOrBlank()
+            val isEanEmpty = newProductData.EAN.isNullOrBlank()
+            val isNumEmpty = newProductData.NUM.isNullOrBlank()
+
+            if (isNameEmpty && isEanEmpty && isNumEmpty) {
+                return@launch // Зупиняємо виконання для цього рядка, йдемо до наступного
+            }
+            val barcodeValue = newProductData.EAN?.takeIf { it.isNotBlank() }
+                ?: newProductData.NUM?.takeIf { it.isNotBlank() }
+                ?: java.util.UUID.randomUUID().toString()
+
+            val existing = dao.getProductByBarcode(barcodeValue)
+
+            if (existing != null) {
+                val updated = existing.copy(
+                    name = newProductData.NAME?.takeIf { it.isNotBlank() } ?: existing.name,
+                    plu = newProductData.NUM?.takeIf { it.isNotBlank() } ?: existing.plu,
+                    groupPlu = newProductData.F_GROUPPLU?.takeIf { it.isNotBlank() } ?: existing.groupPlu
+                )
+                dao.insertProduct(updated)
+            } else {
+
+                val product = Product(
+                    barcode = barcodeValue,
+                    name = newProductData.NAME?.takeIf { it.isNotBlank() } ?: "Без назви",
+                    plu = newProductData.NUM ?: "",
+                    groupPlu = newProductData.F_GROUPPLU ?: ""
+                )
+                dao.insertProduct(product)
+            }
+        }
     }
 
     fun exportBackup(context: Context) {
@@ -416,25 +468,32 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 val jsonProducts: List<JsonProduct> = Gson().fromJson(jsonString, listType)
 
                 jsonProducts.forEach { json ->
-                    val barcodeValue = json.EAN?.takeIf { it.isNotBlank() }
-                        ?: json.NUM?.takeIf { it.isNotBlank() }
-                        ?: java.util.UUID.randomUUID().toString()
-
-                    val product = Product(
-                        barcode = barcodeValue,
-                        name = json.NAME ?: "Без назви",
-                        plu = json.NUM ?: "",
-                        useByDate = json.USEDBYDATE ?: "",
-                        groupPlu = json.F_GROUPPLU ?: ""
-                    )
-                    dao.insertProduct(product)
+                    updateOrInsertProduct(json)
                 }
 
                 setStatus("Імпорт успішно завершено!")
-
             } catch (e: Exception) {
                 e.printStackTrace()
                 setStatus("Помилка імпорту")
+            }
+        }
+    }
+
+    fun importCustomJson(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                val listType = object : TypeToken<List<JsonProduct>>() {}.type
+                val jsonProducts: List<JsonProduct> = Gson().fromJson(jsonString, listType)
+
+                jsonProducts.forEach { json ->
+                    updateOrInsertProduct(json)
+                }
+
+                setStatus("Імпортовано ${jsonProducts.size} товарів!")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                setStatus("Помилка імпорту: ${e.message}")
             }
         }
     }
