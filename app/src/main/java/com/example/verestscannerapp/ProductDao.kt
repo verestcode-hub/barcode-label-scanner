@@ -12,6 +12,8 @@ interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProduct(product: Product)
 
+    @Query("SELECT * FROM products WHERE barcode LIKE :searchCode LIMIT 1")
+    suspend fun searchByBarcode(searchCode: String): Product?
     @Query("SELECT * FROM products WHERE barcode = :barcode")
     suspend fun getProductByBarcode(barcode: String): Product?
 

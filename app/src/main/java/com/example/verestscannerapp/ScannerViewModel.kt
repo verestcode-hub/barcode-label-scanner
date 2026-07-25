@@ -230,13 +230,12 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     fun updateOrInsertProduct(newProductData: JsonProduct) {
         viewModelScope.launch {
-            // ФІЛЬТР ВІД СМІТТЯ: Якщо рядок з Excel повністю порожній - ігноруємо його
             val isNameEmpty = newProductData.NAME.isNullOrBlank()
             val isEanEmpty = newProductData.EAN.isNullOrBlank()
             val isNumEmpty = newProductData.NUM.isNullOrBlank()
 
             if (isNameEmpty && isEanEmpty && isNumEmpty) {
-                return@launch // Зупиняємо виконання для цього рядка, йдемо до наступного
+                return@launch
             }
             val barcodeValue = newProductData.EAN?.takeIf { it.isNotBlank() }
                 ?: newProductData.NUM?.takeIf { it.isNotBlank() }
@@ -357,6 +356,16 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         }
     }
 
+    private fun calculateEan13Checksum(barcode12: String): Char {
+        var sum = 0
+        for (i in 0..11) {
+            val digit = barcode12[i].digitToIntOrNull() ?: 0
+            sum += if (i % 2 == 0) digit else digit * 3
+        }
+        val checksum = (10 - (sum % 10)) % 10
+        return checksum.digitToChar()
+    }
+
     fun processBarcode(barcode: String) {
         val cleanBarcode = barcode.trim()
         if (cleanBarcode.isEmpty()) {
@@ -366,12 +375,35 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         }
 
         viewModelScope.launch {
-            val existing = dao.getProductByBarcode(cleanBarcode)
+            var existing = dao.getProductByBarcode(cleanBarcode)
+
+            if (existing == null && cleanBarcode.length >= 6) {
+
+                for (baseLength in 8 downTo 5) {
+                    if (baseLength > cleanBarcode.length) continue
+
+                    val baseCode = cleanBarcode.substring(0, baseLength)
+
+                    existing = dao.getProductByBarcode(baseCode)
+                    if (existing != null) break
+
+                    val paddedZeros = baseCode.padEnd(13, '0')
+                    existing = dao.getProductByBarcode(paddedZeros)
+                    if (existing != null) break
+
+                    val paddedTo12 = baseCode.padEnd(12, '0')
+                    val checksum = calculateEan13Checksum(paddedTo12)
+                    val correctEan13 = paddedTo12 + checksum
+
+                    existing = dao.getProductByBarcode(correctEan13)
+                    if (existing != null) break
+                }
+            }
+
             _scannedProduct.value = existing
             _lastScannedBarcode.value = if (existing == null) cleanBarcode else null
         }
     }
-
     fun createNewProduct(barcode: String, name: String) {
         viewModelScope.launch {
             val newProduct = Product(

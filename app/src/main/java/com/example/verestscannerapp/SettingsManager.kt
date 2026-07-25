@@ -12,10 +12,9 @@ class SettingsManager(private val context: Context) {
         val SHOW_SCAN_BTN = booleanPreferencesKey("show_scan_btn")
         val SHOW_MAGIC_BTN = booleanPreferencesKey("show_magic_btn")
         val GRID_COLUMNS = intPreferencesKey("grid_columns")
-        val THEME_MODE = stringPreferencesKey("theme_mode") // Зберігаємо як String (назву enum)
+        val THEME_MODE = stringPreferencesKey("theme_mode")
     }
 
-    // Потоки даних (Flow)
     val settingsFlow = context.dataStore.data.map { prefs ->
         UserSettings(
             showScanBtn = prefs[SHOW_SCAN_BTN] ?: true,

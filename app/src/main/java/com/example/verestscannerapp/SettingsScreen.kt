@@ -2,6 +2,12 @@
 
 package com.example.verestscannerapp
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,34 +26,48 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.BackHandler
 
 @Composable
 fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
     var currentSubScreen by remember { mutableStateOf<String?>(null) }
 
-    when (currentSubScreen) {
-        "Interface" -> InterfaceSettings(viewModel) { currentSubScreen = null }
-        "Networks" -> NetworksSettings(viewModel) { currentSubScreen = null }
-        else -> {
-            SettingsBaseScaffold("Налаштування", onClose) {
-                Spacer(modifier = Modifier.height(8.dp))
+    AnimatedContent(
+        targetState = currentSubScreen,
+        transitionSpec = {
+            if (targetState != null && initialState == null) {
+                slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) togetherWith
+                        slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(300))
+            } else {
 
-                SettingsItemCard(
-                    title = "Інтерфейс",
-                    desc = "Кнопки головного екрана та карток",
-                    icon = Icons.Default.DisplaySettings,
-                    iconBgColor = MaterialTheme.colorScheme.primaryContainer,
-                    iconTintColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ) { currentSubScreen = "Interface" }
+                slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(300)) togetherWith
+                        slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300))
+            }
+        },
+        label = "SettingsTransition"
+    ) { targetScreen ->
+        when (targetScreen) {
+            "Interface" -> InterfaceSettings(viewModel) { currentSubScreen = null }
+            "Networks" -> NetworksSettings(viewModel) { currentSubScreen = null }
+            else -> {
+                SettingsBaseScaffold("Налаштування", onClose) {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                SettingsItemCard(
-                    title = "Керування мережами/категоріями",
-                    desc = "Список доступних мереж",
-                    icon = Icons.Default.Lan,
-                    iconBgColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    iconTintColor = MaterialTheme.colorScheme.onTertiaryContainer
-                ) { currentSubScreen = "Networks" }
+                    SettingsItemCard(
+                        title = "Інтерфейс",
+                        desc = "Кнопки головного екрана та карток",
+                        icon = Icons.Default.DisplaySettings,
+                        iconBgColor = MaterialTheme.colorScheme.primaryContainer,
+                        iconTintColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) { currentSubScreen = "Interface" }
+
+                    SettingsItemCard(
+                        title = "Клієнти",
+                        desc = "Список доступних клієнтів",
+                        icon = Icons.Default.Lan,
+                        iconBgColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        iconTintColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    ) { currentSubScreen = "Networks" }
+                }
             }
         }
     }
@@ -55,7 +75,6 @@ fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
 
 @Composable
 fun SettingsBaseScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-
     BackHandler {
         onBack()
     }
@@ -179,7 +198,7 @@ fun NetworksSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
                 onValueChange = { newNet = it },
                 modifier = Modifier.weight(1f),
                 label = { Text("Назва мережі") },
-                shape = RoundedCornerShape(24.dp) // Більш системне заокруглення поля вводу
+                shape = RoundedCornerShape(24.dp)
             )
             Spacer(Modifier.width(8.dp))
             Button(onClick = { viewModel.addNetwork(newNet); newNet = "" }) { Text("Додати") }
