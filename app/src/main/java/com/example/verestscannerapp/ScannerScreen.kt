@@ -127,7 +127,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Використовуємо один стан для навігації між екранами
     var currentMainScreen by rememberSaveable { mutableStateOf("SCANNER") }
 
     var isViewingFromInventory by rememberSaveable { mutableStateOf(false) }
@@ -410,6 +409,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(when (mode) {
                                             ThemeMode.SYSTEM -> "Системна"
+                                            ThemeMode.VEREST -> "Верест"
                                             ThemeMode.LIGHT -> "Світла"
                                             ThemeMode.DARK -> "Темна"
                                         })
@@ -426,12 +426,26 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
-                        ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
+                        ModalDrawerSheet(
+                            modifier = Modifier.width(300.dp),
+                            drawerContentColor = MaterialTheme.colorScheme.background
+                            ) {
+
+
+                            val drawerItemColors = NavigationDrawerItemDefaults.colors(
+                                unselectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                unselectedTextColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                unselectedContainerColor = Color.Transparent
+                            )
+
                             Spacer(Modifier.height(16.dp))
                             Text(
                                 text = "Меню",
                                 modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.headlineSmall
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.primary
                             )
 
                             NavigationDrawerItem(
@@ -439,7 +453,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 label = { Text("Показати весь інвентар", fontWeight = FontWeight.Bold) },
                                 selected = false,
                                 onClick = { scope.launch { drawerState.close() }; currentMainScreen = "INVENTORY" },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
 
                             NavigationDrawerItem(
@@ -447,27 +462,38 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 label = { Text("Налаштування", fontWeight = FontWeight.Bold) },
                                 selected = false,
                                 onClick = { scope.launch { drawerState.close() }; currentMainScreen = "SETTINGS" },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
 
 
                             ListItem(
                                 headlineContent = { Text("Тема") },
-                                supportingContent = { Text(when(currentTheme) { ThemeMode.SYSTEM -> "Системна"; ThemeMode.LIGHT -> "Світла"; ThemeMode.DARK -> "Темна" }) },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                supportingContent = { Text(when(currentTheme) { ThemeMode.SYSTEM -> "Системна"; ThemeMode.VEREST -> "Верест"; ThemeMode.LIGHT -> "Світла"; ThemeMode.DARK -> "Темна" }) },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.Transparent,
+                                    headlineColor = MaterialTheme.colorScheme.primary,
+                                    supportingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                ),
                                 modifier = Modifier.clickable { showThemeDialog = true }
                             )
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                            Text("Дані", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "Дані",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
 
                             NavigationDrawerItem(
                                 icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = null) },
                                 label = { Text("Імпорт JSON") },
                                 selected = false,
                                 onClick = { scope.launch { drawerState.close() }; viewModel.importDataFromJson(context) },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
 
                             NavigationDrawerItem(
@@ -478,7 +504,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     scope.launch { drawerState.close() }
                                     jsonPickerLauncher.launch("*/*")
                                 },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
 
                             NavigationDrawerItem(
@@ -486,14 +513,16 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 label = { Text("Зробити бекап") },
                                 selected = false,
                                 onClick = { scope.launch { drawerState.close() }; viewModel.exportBackup(context); scope.launch { delay(1000); viewModel.shareBackup(context) } },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
                             NavigationDrawerItem(
                                 icon = { Icon(imageVector = Icons.Default.Refresh, contentDescription = null) },
                                 label = { Text("Відновити з бекапу") },
                                 selected = false,
                                 onClick = { scope.launch { drawerState.close() }; backupPickerLauncher.launch(arrayOf("application/zip")) },
-                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                                colors = drawerItemColors
                             )
                         }
                     }
@@ -508,7 +537,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    titleContentColor = MaterialTheme.colorScheme.primary,
+                                    navigationIconContentColor = MaterialTheme.colorScheme.primary,
+                                    actionIconContentColor = MaterialTheme.colorScheme.primary
                                 )
                             )
                         }
@@ -606,7 +638,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 }
                                         },
                                         modifier = Modifier.fillMaxWidth().height(56.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        )
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Search,
@@ -640,7 +675,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                             )
                                         },
                                         modifier = Modifier.fillMaxWidth().height(56.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.secondary,
+                                            contentColor = MaterialTheme.colorScheme.onSecondary
+                                        )
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.AutoAwesome,

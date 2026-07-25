@@ -1,6 +1,7 @@
 package com.example.verestscannerapp
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,7 +77,6 @@ fun InventoryScreen(
     var showSortSheet by remember { mutableStateOf(false) }
 
     val currentColumns = if (isGridView) savedGridColumns else 1
-
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
 
@@ -85,7 +86,6 @@ fun InventoryScreen(
                     it.barcode.contains(searchQuery, ignoreCase = true) ||
                     it.plu.contains(searchQuery, ignoreCase = true)
         }
-
         val sorted = when (sortType) {
             SortType.NAME -> filtered.sortedBy {
                 it.name.trim().replace("\"", "").replace("«", "").replace("»", "").lowercase()
@@ -94,7 +94,6 @@ fun InventoryScreen(
             SortType.DATE_ADDED -> filtered.sortedBy { it.createdAt }
             SortType.DATE_MODIFIED -> filtered.sortedBy { it.updatedAt }
         }
-
         if (isSortAscending) sorted else sorted.reversed()
     }
 
@@ -127,7 +126,11 @@ fun InventoryScreen(
                     ) {
                         RadioButton(
                             selected = sortType == option,
-                            onClick = { onSortTypeChange(option) }
+                            onClick = { onSortTypeChange(option) },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary,
+                                unselectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            )
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(option.title, style = MaterialTheme.typography.bodyLarge)
@@ -155,12 +158,16 @@ fun InventoryScreen(
                         Text(
                             text = if (isSortAscending) "(А-Я, 0-9, спочатку старі)" else "(Я-А, 9-0, спочатку нові)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                     Switch(
                         checked = isSortAscending,
-                        onCheckedChange = { onSortOrderChange(it) }
+                        onCheckedChange = { onSortOrderChange(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
                 Spacer(modifier = Modifier.height(32.dp))
@@ -202,7 +209,6 @@ fun InventoryScreen(
                         IconButton(onClick = { showSortSheet = true }) {
                             Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Сортувати")
                         }
-
                         IconButton(onClick = {
                             if (!isGridView && !rememberGridChoice) {
                                 onColumnsChange(2)
@@ -220,7 +226,10 @@ fun InventoryScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -262,11 +271,11 @@ fun InventoryScreen(
 
             if (products.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("База даних порожня", color = Color.Gray)
+                    Text("База даних порожня", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
             } else if (sortedAndFilteredProducts.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("За вашим запитом нічого не знайдено", color = Color.Gray)
+                    Text("За вашим запитом нічого не знайдено", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
             } else {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -337,15 +346,16 @@ fun InventoryScreen(
                                                     contentScale = ContentScale.Crop
                                                 )
                                             } else {
-                                                Box(
+                                                Image(
+                                                    painter = painterResource(id = R.drawable.verest_placeholder_img),
+                                                    contentDescription = "Немає фото",
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .height(imageHeight)
-                                                        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text("Нема", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
-                                                }
+                                                        .clip(RoundedCornerShape(8.dp)),
+                                                    contentScale = ContentScale.Crop,
+                                                    alpha = 0.4f
+                                                )
                                             }
 
                                             if (isSelectionMode) {
@@ -370,7 +380,7 @@ fun InventoryScreen(
                                             Text(
                                                 text = product.barcode,
                                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = (MaterialTheme.typography.bodySmall.fontSize.value * fontSizeScale).sp),
-                                                color = Color.Gray,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
@@ -393,14 +403,15 @@ fun InventoryScreen(
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else {
-                                            Box(
+                                            Image(
+                                                painter = painterResource(id = R.drawable.verest_placeholder_img),
+                                                contentDescription = "Немає фото",
                                                 modifier = Modifier
                                                     .size(60.dp)
-                                                    .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text("Нема", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
-                                            }
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop,
+                                                alpha = 0.4f
+                                            )
                                         }
 
                                         Spacer(modifier = Modifier.width(16.dp))
@@ -413,7 +424,7 @@ fun InventoryScreen(
                                             )
                                             Text(text = "Код: ${product.barcode}", style = MaterialTheme.typography.bodyMedium.copy(fontSize = (MaterialTheme.typography.bodyMedium.fontSize.value * fontSizeScale).sp))
                                             if (product.plu.isNotEmpty()) {
-                                                Text(text = "PLU: ${product.plu}", style = MaterialTheme.typography.bodySmall.copy(fontSize = (MaterialTheme.typography.bodySmall.fontSize.value * fontSizeScale).sp), color = Color.Gray)
+                                                Text(text = "PLU: ${product.plu}", style = MaterialTheme.typography.bodySmall.copy(fontSize = (MaterialTheme.typography.bodySmall.fontSize.value * fontSizeScale).sp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                                             }
                                         }
 
@@ -473,7 +484,7 @@ fun InventoryScreen(
                         enabled = deleteConfirmationText == "DELETE",
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("Видалити")
+                        Text("Видалити", color = Color.White)
                     }
                 },
                 dismissButton = {
@@ -505,21 +516,50 @@ fun GridSettingsPanel(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp))
             .padding(16.dp)
     ) {
         Text("Стовпців: $savedColumns", fontWeight = FontWeight.Bold)
-        Slider(value = savedColumns.toFloat(), onValueChange = { onColumnsChange(it.toInt()) }, valueRange = 2f..6f, steps = 3)
+        Slider(
+            value = savedColumns.toFloat(),
+            onValueChange = { onColumnsChange(it.toInt()) },
+            valueRange = 2f..6f,
+            steps = 3,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                activeTickColor = MaterialTheme.colorScheme.onPrimary,
+                inactiveTickColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            )
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Text("Розмір шрифту: ${(fontSizeScale * 100).toInt()}%", fontWeight = FontWeight.Bold)
-        Slider(value = fontSizeScale, onValueChange = { onFontSizeChange(it) }, valueRange = 0.8f..1.5f)
+        Slider(
+            value = fontSizeScale,
+            onValueChange = { onFontSizeChange(it) },
+            valueRange = 0.8f..1.5f,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+            )
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onRememberChange(!rememberChoice) }) {
-            Checkbox(checked = rememberChoice, onCheckedChange = { onRememberChange(it) })
+            Checkbox(
+                checked = rememberChoice,
+                onCheckedChange = { onRememberChange(it) },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                    uncheckedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                )
+            )
             Text("Запам'ятати вибір")
         }
     }

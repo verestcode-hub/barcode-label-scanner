@@ -33,7 +33,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class ThemeMode { SYSTEM, LIGHT, DARK, VEREST }
 
 class ScannerViewModel(application: Application, private val dao: ProductDao) : AndroidViewModel(application) {
 
