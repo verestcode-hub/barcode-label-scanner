@@ -191,13 +191,13 @@ fun NetworksSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
         onBack()
     }
 
-    SettingsBaseScaffold("Керування мережами", onBack) {
+    SettingsBaseScaffold("Керування клієнтами", onBack) {
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = newNet,
                 onValueChange = { newNet = it },
                 modifier = Modifier.weight(1f),
-                label = { Text("Назва мережі") },
+                label = { Text("Назва клієнта") },
                 shape = RoundedCornerShape(24.dp)
             )
             Spacer(Modifier.width(8.dp))

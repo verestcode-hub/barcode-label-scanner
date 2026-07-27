@@ -103,6 +103,22 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         prefs[NETWORKS_KEY] ?: setOf("Verest", "АТБ", "Сільпо", "Novus", "Аврора")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), setOf("Verest", "АТБ", "Сільпо", "Novus", "Аврора"))
 
+    private val _scanInput = MutableStateFlow("")
+    val scanInput: StateFlow<String> = _scanInput
+    fun updateScanInput(input: String) { _scanInput.value = input }
+
+    private val _newNameInput = MutableStateFlow("")
+    val newNameInput: StateFlow<String> = _newNameInput
+    fun updateNewNameInput(name: String) { _newNameInput.value = name }
+
+    private val _isCreating = MutableStateFlow(false)
+    val isCreating: StateFlow<Boolean> = _isCreating
+    fun setIsCreating(isCreating: Boolean) { _isCreating.value = isCreating }
+
+    private val _isManualInputMode = MutableStateFlow(false)
+    val isManualInputMode: StateFlow<Boolean> = _isManualInputMode
+    fun setIsManualInputMode(isManualMode: Boolean) { _isManualInputMode.value = isManualMode }
+
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[THEME_KEY] = mode.name }
@@ -369,8 +385,7 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     fun processBarcode(barcode: String) {
         val cleanBarcode = barcode.trim()
         if (cleanBarcode.isEmpty()) {
-            _scannedProduct.value = null
-            _lastScannedBarcode.value = null
+            clearCurrentProduct()
             return
         }
 
@@ -404,6 +419,7 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             _lastScannedBarcode.value = if (existing == null) cleanBarcode else null
         }
     }
+
     fun createNewProduct(barcode: String, name: String) {
         viewModelScope.launch {
             val newProduct = Product(
@@ -416,6 +432,10 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             dao.insertProduct(newProduct)
             _scannedProduct.value = newProduct
             _lastScannedBarcode.value = null
+
+            _isCreating.value = false
+            _newNameInput.value = ""
+
             setStatus("Товар створено!")
         }
     }
@@ -481,6 +501,9 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     fun clearCurrentProduct() {
         _scannedProduct.value = null
         _lastScannedBarcode.value = null
+        _isCreating.value = false
+        _newNameInput.value = ""
+        _scanInput.value = ""
     }
 
     fun performTextRecognition(context: Context, bitmap: Bitmap, onResult: (String) -> Unit) {

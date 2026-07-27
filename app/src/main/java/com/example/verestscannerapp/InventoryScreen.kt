@@ -289,7 +289,10 @@ fun InventoryScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(sortedAndFilteredProducts) { product ->
+                        items(
+                            items = sortedAndFilteredProducts,
+                            key = { product -> product.barcode }
+                        ) {product ->
                             val isSelected = selectedProducts.contains(product)
 
                             val imageHeight = when (currentColumns) {

@@ -155,24 +155,21 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val saveStatus by viewModel.saveStatus.collectAsState()
     val lastScannedBarcode by viewModel.lastScannedBarcode.collectAsState()
 
-    var scanInput by remember { mutableStateOf("") }
+    val scanInput by viewModel.scanInput.collectAsState()
+    val isCreating by viewModel.isCreating.collectAsState()
+    val isManualInputMode by viewModel.isManualInputMode.collectAsState()
+    val newNameInput by viewModel.newNameInput.collectAsState()
 
     val rootFocusRequester = remember { FocusRequester() }
     val manualFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     var isEditing by remember { mutableStateOf(false) }
-    var isCreating by remember { mutableStateOf(false) }
-    var isManualInputMode by remember { mutableStateOf(false) }
-
     var showBottomSheet by remember { mutableStateOf(false) }
+    var isMagicScanning by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
-
-    var isMagicScanning by remember { mutableStateOf(false) }
-    var prefilledName by remember { mutableStateOf("") }
 
     val magicCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) {
@@ -194,14 +191,14 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                         withContext(Dispatchers.Main) {
                             if (origBitmap != null && cropBitmap != null) {
-
                                 viewModel.performTextRecognition(context, cropBitmap) { text ->
-                                    prefilledName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                    val cleanName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                    viewModel.updateNewNameInput(cleanName)
 
                                     viewModel.scanBarcodeFromBitmap(origBitmap, cropRect) { barcode ->
                                         isMagicScanning = false
                                         if (barcode != null) {
-                                            isCreating = true
+                                            viewModel.setIsCreating(true)
                                             viewModel.processBarcode(barcode)
                                         } else {
                                             Toast.makeText(context, "Штрих-код не знайдено на фотографії", Toast.LENGTH_LONG).show()
@@ -428,10 +425,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     drawerContent = {
                         ModalDrawerSheet(
                             modifier = Modifier.width(300.dp),
-                            drawerContentColor = MaterialTheme.colorScheme.background
-                            ) {
-
-
+                            drawerContainerColor = MaterialTheme.colorScheme.background
+                        ) {
                             val drawerItemColors = NavigationDrawerItemDefaults.colors(
                                 unselectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -465,7 +460,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                 colors = drawerItemColors
                             )
-
 
                             ListItem(
                                 headlineContent = { Text("Тема") },
@@ -567,13 +561,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         if (key == Key.Enter || key == Key.NumPadEnter) {
                                             if (scanInput.isNotBlank()) {
                                                 viewModel.processBarcode(scanInput.trim())
-                                                scanInput = ""
+                                                viewModel.updateScanInput("")
                                             }
                                             return@onPreviewKeyEvent true
                                         }
                                         val char = keyEvent.utf16CodePoint.toChar()
                                         if (char in ' '..'~') {
-                                            scanInput += char
+                                            viewModel.updateScanInput(scanInput + char)
                                             return@onPreviewKeyEvent true
                                         }
                                     }
@@ -587,7 +581,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             if (isManualInputMode) {
                                 OutlinedTextField(
                                     value = scanInput,
-                                    onValueChange = { scanInput = it },
+                                    onValueChange = { viewModel.updateScanInput(it) },
                                     modifier = Modifier.fillMaxWidth().focusRequester(manualFocusRequester),
                                     label = { Text("Введіть штрих-код вручну") },
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -595,13 +589,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         onDone = {
                                             if (scanInput.isNotBlank()) {
                                                 viewModel.processBarcode(scanInput.trim())
-                                                scanInput = ""
+                                                viewModel.updateScanInput("")
                                             }
-                                            isManualInputMode = false
+                                            viewModel.setIsManualInputMode(false)
                                         }
                                     ),
                                     trailingIcon = {
-                                        IconButton(onClick = { isManualInputMode = false }) {
+                                        IconButton(onClick = { viewModel.setIsManualInputMode(false) }) {
                                             Icon(imageVector = Icons.Default.Close, contentDescription = "Закрити")
                                         }
                                     }
@@ -615,7 +609,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         label = { Text("Очікується ввід штрих-коду...") },
                                         readOnly = true
                                     )
-                                    Box(modifier = Modifier.matchParentSize().clickable { isManualInputMode = true })
+                                    Box(modifier = Modifier.matchParentSize().clickable { viewModel.setIsManualInputMode(true) })
                                 }
                             }
 
@@ -631,7 +625,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 if (showScanButton) {
                                     Button(
                                         onClick = {
-                                            isCreating = false
+                                            viewModel.setIsCreating(false)
                                             scanner.startScan()
                                                 .addOnSuccessListener { barcode ->
                                                     barcode.rawValue?.let { viewModel.processBarcode(it) }
@@ -805,7 +799,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         } else {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Text(text = "Системні дані:", fontWeight = FontWeight.Bold)
-                                                Button(onClick = { isEditing = true }) { Text("Редагувати") }
+                                                Button(
+                                                    onClick = { isEditing = true },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = MaterialTheme.colorScheme.secondary,
+                                                        contentColor = MaterialTheme.colorScheme.onSecondary
+                                                    )
+                                                ) { Text("Редагувати") }
                                             }
                                             Spacer(modifier = Modifier.height(8.dp))
                                             Text(text = "Клієнт: ${product.groupPlu.ifEmpty { "Не вказано" }}")
@@ -951,7 +951,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 Text(text = "Новий товар (Код: $lastScannedBarcode)", style = MaterialTheme.typography.titleMedium)
                                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                                var newNameInput by remember(lastScannedBarcode) { mutableStateOf(if (prefilledName.isNotEmpty()) prefilledName else "") }
                                                 var isRecognizingText by remember { mutableStateOf(false) }
 
                                                 val manualTextCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
@@ -967,7 +966,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                                     if (bitmap != null) {
                                                                         withContext(Dispatchers.Main) {
                                                                             viewModel.performTextRecognition(context, bitmap) { text ->
-                                                                                newNameInput = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                                                                viewModel.updateNewNameInput(text.replace("\n", " ").replace(Regex("\\s+"), " ").trim())
                                                                                 isRecognizingText = false
                                                                             }
                                                                         }
@@ -988,7 +987,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                                     OutlinedTextField(
                                                         value = newNameInput,
-                                                        onValueChange = { newNameInput = it },
+                                                        onValueChange = { viewModel.updateNewNameInput(it) },
                                                         label = { Text("Введіть назву для створення") },
                                                         modifier = Modifier.weight(1f),
                                                         maxLines = 3
@@ -1030,15 +1029,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 Spacer(modifier = Modifier.height(16.dp))
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                     TextButton(onClick = {
-                                                        isCreating = false
-                                                        prefilledName = ""
                                                         viewModel.clearCurrentProduct()
                                                     }) { Text("Скасувати") }
 
                                                     Button(onClick = {
                                                         viewModel.createNewProduct(lastScannedBarcode!!, newNameInput)
-                                                        isCreating = false
-                                                        prefilledName = ""
                                                         rootFocusRequester.requestFocus()
                                                         keyboardController?.hide()
                                                     }) { Text("Створити і зберегти") }
@@ -1054,7 +1049,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                                             if (showCreateNewBtn) {
                                                 Button(
-                                                    onClick = { isCreating = true },
+                                                    onClick = { viewModel.setIsCreating(true) },
                                                     modifier = Modifier.fillMaxWidth().height(50.dp)
                                                 ) {
                                                     Icon(
