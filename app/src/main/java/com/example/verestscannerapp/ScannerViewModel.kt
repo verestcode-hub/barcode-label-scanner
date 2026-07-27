@@ -32,6 +32,8 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
+import org.apache.poi.ss.usermodel.WorkbookFactory
+import org.apache.poi.ss.usermodel.CellType
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK, VEREST }
 
@@ -54,6 +56,20 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     private val NETWORKS_KEY = stringSetPreferencesKey("custom_networks")
 
+    private val _excelHeaders = MutableStateFlow<List<String>>(emptyList())
+    val excelHeaders: StateFlow<List<String>> = _excelHeaders
+
+    private val _excelPreviewData = MutableStateFlow<List<List<String>>>(emptyList())
+    val excelPreviewData: StateFlow<List<List<String>>> = _excelPreviewData
+
+    private val _pendingExcelUri = MutableStateFlow<Uri?>(null)
+    val pendingExcelUri: StateFlow<Uri?> = _pendingExcelUri
+
+    fun clearPendingExcel() {
+        _pendingExcelUri.value = null
+        _excelHeaders.value = emptyList()
+        _excelPreviewData.value = emptyList()
+    }
 
     val themeMode: StateFlow<ThemeMode> = application.dataStore.data.map { prefs ->
         try { ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name) } catch (e: Exception) { ThemeMode.SYSTEM }
@@ -263,16 +279,17 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 val updated = existing.copy(
                     name = newProductData.NAME?.takeIf { it.isNotBlank() } ?: existing.name,
                     plu = newProductData.NUM?.takeIf { it.isNotBlank() } ?: existing.plu,
-                    groupPlu = newProductData.F_GROUPPLU?.takeIf { it.isNotBlank() } ?: existing.groupPlu
+                    groupPlu = newProductData.F_GROUPPLU?.takeIf { it.isNotBlank() } ?: existing.groupPlu,
+                    useByDate = newProductData.USEDBYDATE?.takeIf { it.isNotBlank() } ?: existing.useByDate
                 )
                 dao.insertProduct(updated)
             } else {
-
                 val product = Product(
                     barcode = barcodeValue,
                     name = newProductData.NAME?.takeIf { it.isNotBlank() } ?: "Без назви",
                     plu = newProductData.NUM ?: "",
-                    groupPlu = newProductData.F_GROUPPLU ?: ""
+                    groupPlu = newProductData.F_GROUPPLU ?: "",
+                    useByDate = newProductData.USEDBYDATE ?: ""
                 )
                 dao.insertProduct(product)
             }
@@ -549,6 +566,141 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             } catch (e: Exception) {
                 e.printStackTrace()
                 setStatus("Помилка імпорту: ${e.message}")
+            }
+        }
+    }
+
+    fun readExcelHeaders(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
+                val workbook = WorkbookFactory.create(inputStream)
+                val sheet = workbook.getSheetAt(0)
+
+                // Знаходимо максимальну кількість колонок по перших кількох рядках
+                var maxColumns = 0
+                for (i in 0..5) {
+                    val row = sheet.getRow(i)
+                    if (row != null && row.lastCellNum > maxColumns) {
+                        maxColumns = row.lastCellNum.toInt()
+                    }
+                }
+
+                val headers = mutableListOf<String>()
+                val previewData = mutableListOf<List<String>>()
+
+                if (maxColumns > 0) {
+                    // 1. Формуємо заголовки
+                    val firstRow = sheet.getRow(0)
+                    for (i in 0 until maxColumns) {
+                        var colNum = i + 1
+                        var colLetter = ""
+                        while (colNum > 0) {
+                            val rem = (colNum - 1) % 26
+                            colLetter = (65 + rem).toChar() + colLetter
+                            colNum = (colNum - 1) / 26
+                        }
+
+                        val cell = firstRow?.getCell(i)
+                        if (cell != null) {
+                            cell.setCellType(CellType.STRING)
+                            val title = cell.stringCellValue?.trim()?.takeIf { it.isNotBlank() } ?: "Стовпець $colLetter"
+                            headers.add(title)
+                        } else {
+                            headers.add("Стовпець $colLetter (Порожній)")
+                        }
+                    }
+
+                    // 2. Читаємо перші 3 рядки з даними для візуалу
+                    for (rowIndex in 1..5) {
+                        val row = sheet.getRow(rowIndex)
+                        val rowData = mutableListOf<String>()
+                        if (row != null) {
+                            for (colIndex in 0 until maxColumns) {
+                                val cell = row.getCell(colIndex)
+                                if (cell != null) {
+                                    cell.setCellType(CellType.STRING)
+                                    rowData.add(cell.stringCellValue?.trim() ?: "")
+                                } else {
+                                    rowData.add("")
+                                }
+                            }
+                        } else {
+                            for (colIndex in 0 until maxColumns) { rowData.add("") }
+                        }
+                        previewData.add(rowData)
+                    }
+                }
+
+                workbook.close()
+                inputStream.close()
+
+                _pendingExcelUri.value = uri
+                _excelHeaders.value = headers
+                _excelPreviewData.value = previewData
+            } catch (e: Exception) {
+                e.printStackTrace()
+                setStatus("Помилка читання файлу")
+            }
+        }
+    }
+
+    fun importExcelWithMapping(
+        context: Context, barcodeIdx: Int, nameIdx: Int, pluIdx: Int, groupIdx: Int, dateIdx: Int
+    ) {
+        val uri = _pendingExcelUri.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                setStatus("Читання файлу...")
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
+                val workbook = WorkbookFactory.create(inputStream)
+                val sheet = workbook.getSheetAt(0)
+
+                var importedCount = 0
+                var skipHeader = true
+
+                fun getCellStr(row: org.apache.poi.ss.usermodel.Row, index: Int): String {
+                    if (index < 0) return ""
+                    val cell = row.getCell(index) ?: return ""
+                    cell.setCellType(CellType.STRING)
+                    return cell.stringCellValue?.trim() ?: ""
+                }
+
+                for (row in sheet) {
+                    if (skipHeader) {
+                        skipHeader = false
+                        continue
+                    }
+
+                    val ean = getCellStr(row, barcodeIdx)
+                    val name = getCellStr(row, nameIdx)
+                    val plu = getCellStr(row, pluIdx)
+                    val group = getCellStr(row, groupIdx)
+                    val expDate = getCellStr(row, dateIdx)
+
+                    if (ean.isNotBlank() || plu.isNotBlank()) {
+                        val jsonProduct = JsonProduct(
+                            EAN = ean,
+                            NAME = name,
+                            NUM = plu,
+                            F_GROUPPLU = group,
+                            USEDBYDATE = expDate
+                        )
+                        updateOrInsertProduct(jsonProduct)
+                        importedCount++
+                    }
+                }
+
+                workbook.close()
+                inputStream.close()
+
+                clearPendingExcel()
+                setStatus("Імпортовано $importedCount товарів!")
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                setStatus("Помилка імпорту Excel")
+                clearPendingExcel()
             }
         }
     }

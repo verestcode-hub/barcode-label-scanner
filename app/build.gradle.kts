@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.verestscannerapp"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -64,4 +64,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    implementation("org.apache.poi:poi:5.2.3")
+    implementation("org.apache.poi:poi-ooxml:5.2.3")
 }

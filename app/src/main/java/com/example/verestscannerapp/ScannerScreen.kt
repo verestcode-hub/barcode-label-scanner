@@ -83,6 +83,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.window.DialogProperties
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -170,6 +172,61 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     val context = LocalContext.current
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
+
+    val excelHeaders by viewModel.excelHeaders.collectAsState()
+    val excelPreviewData by viewModel.excelPreviewData.collectAsState()
+
+    if (excelHeaders.isNotEmpty()) {
+        var barcodeIdx by remember { mutableStateOf(excelHeaders.indexOfFirst { it.contains("штрих", true) || it.contains("код", true) || it.contains("barcode", true) }) }
+        var nameIdx by remember { mutableStateOf(excelHeaders.indexOfFirst { it.contains("назв", true) || it.contains("найменування", true) || it.contains("товар", true) }) }
+        var pluIdx by remember { mutableStateOf(excelHeaders.indexOfFirst { it.contains("plu", true) || it.contains("плу", true) }) }
+        var groupIdx by remember { mutableStateOf(excelHeaders.indexOfFirst { it.contains("клієнт", true) || it.contains("постачальник", true) || it.contains("група", true) }) }
+        var dateIdx by remember { mutableStateOf(excelHeaders.indexOfFirst { it.contains("термін", true) || it.contains("дата", true) || it.contains("придат", true) }) }
+
+        AlertDialog(
+            onDismissRequest = { viewModel.clearPendingExcel() },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+
+            modifier = Modifier
+                .fillMaxWidth(0.90f)
+                .widthIn(max = 800.dp),
+
+            title = { Text("Налаштування імпорту") },
+
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            "Вкажіть, які колонки з файлу відповідають даним у системі.",
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        ColumnMapper("Штрих-код", excelHeaders, barcodeIdx) { barcodeIdx = it }
+                        ColumnMapper("Назва товару", excelHeaders, nameIdx) { nameIdx = it }
+                        ColumnMapper("PLU-код", excelHeaders, pluIdx) { pluIdx = it }
+                        ColumnMapper("Клієнт (Група)", excelHeaders, groupIdx) { groupIdx = it }
+                        ColumnMapper("Термін придатності", excelHeaders, dateIdx) { dateIdx = it }
+
+                        if (excelPreviewData.isNotEmpty()) {
+                            ExcelPreviewTable(headers = excelHeaders, previewData = excelPreviewData)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.importExcelWithMapping(context, barcodeIdx, nameIdx, pluIdx, groupIdx, dateIdx)
+                }) { Text("Імпортувати") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearPendingExcel() }) { Text("Скасувати") }
+            }
+        )
+    }
 
     val magicCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) {
@@ -270,11 +327,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
         }
     )
 
-    val jsonPickerLauncher = rememberLauncherForActivityResult(
+    val excelPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             uri?.let {
-                viewModel.importCustomJson(context, it)
+                viewModel.readExcelHeaders(context, it)
             }
         }
     )
@@ -492,11 +549,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                             NavigationDrawerItem(
                                 icon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = null) },
-                                label = { Text("Імпорт Excel (JSON)") },
+                                label = { Text("Імпорт з Excel (.xlsx)") },
                                 selected = false,
                                 onClick = {
                                     scope.launch { drawerState.close() }
-                                    jsonPickerLauncher.launch("*/*")
+                                    excelPickerLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                                 },
                                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                                 colors = drawerItemColors
@@ -1103,6 +1160,108 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ColumnMapper(label: String, headers: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        val displayValue = if (selectedIndex in headers.indices) headers[selectedIndex] else "Не вибрано"
+        OutlinedTextField(
+            value = displayValue,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("Не вибрано (Пропустити)") }, onClick = { onSelect(-1); expanded = false })
+            headers.forEachIndexed { index, title ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onSelect(index); expanded = false })
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+}
+
+@Composable
+fun ExcelPreviewTable(headers: List<String>, previewData: List<List<String>>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+    ) {
+        Text(
+            text = "Попередній перегляд файлу:",
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                .padding(1.dp)
+                .height(IntrinsicSize.Min) // <--- Додали це, щоб рядок знав свою висоту для роздільника
+        ) {
+            headers.forEachIndexed { colIndex, headerText ->
+                Column(
+                    modifier = Modifier
+                        .widthIn(min = 120.dp, max = 200.dp)
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = headerText,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+
+
+                    previewData.forEach { row ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                        ) {
+                            val cellText = if (colIndex < row.size) row[colIndex] else ""
+                            Text(
+                                text = cellText.ifEmpty { "-" },
+                                maxLines = 1,
+                                color = if (cellText.isEmpty()) Color.Gray else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    }
+                }
+
+                if (colIndex < headers.size - 1) {
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                    )
                 }
             }
         }
