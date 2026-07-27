@@ -85,6 +85,9 @@ import java.io.FileOutputStream
 import java.util.UUID
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.ui.window.Dialog
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     val filename = "IMG_${UUID.randomUUID()}.jpg"
@@ -188,7 +191,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             properties = DialogProperties(usePlatformDefaultWidth = false),
 
             modifier = Modifier
-                .fillMaxWidth(0.90f)
+                .fillMaxWidth(0.80f)
                 .widthIn(max = 800.dp),
 
             title = { Text("Налаштування імпорту") },
@@ -1196,25 +1199,16 @@ fun ColumnMapper(label: String, headers: List<String>, selectedIndex: Int, onSel
 
 @Composable
 fun ExcelPreviewTable(headers: List<String>, previewData: List<List<String>>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp)
-    ) {
-        Text(
-            text = "Попередній перегляд файлу:",
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+    var isFullscreen by rememberSaveable { mutableStateOf(false) }
 
+    val tableContent = @Composable {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
                 .horizontalScroll(rememberScrollState())
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(1.dp)
-                .height(IntrinsicSize.Min) // <--- Додали це, щоб рядок знав свою висоту для роздільника
         ) {
             headers.forEachIndexed { colIndex, headerText ->
                 Column(
@@ -1237,7 +1231,6 @@ fun ExcelPreviewTable(headers: List<String>, previewData: List<List<String>>) {
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
 
-
                     previewData.forEach { row ->
                         Box(
                             modifier = Modifier
@@ -1256,12 +1249,76 @@ fun ExcelPreviewTable(headers: List<String>, previewData: List<List<String>>) {
                 }
 
                 if (colIndex < headers.size - 1) {
-                    Box(
+                    Spacer(
                         modifier = Modifier
                             .width(1.dp)
                             .fillMaxHeight()
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                     )
+                }
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Попередній перегляд файлу:",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            IconButton(onClick = { isFullscreen = true }) {
+                Icon(imageVector = Icons.Default.Fullscreen, contentDescription = "На весь екран")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        tableContent()
+    }
+
+    if (isFullscreen) {
+        Dialog(
+            onDismissRequest = { isFullscreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Попередній перегляд",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = { isFullscreen = false }) {
+                            Icon(imageVector = Icons.Default.FullscreenExit, contentDescription = "Згорнути")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    tableContent()
                 }
             }
         }
