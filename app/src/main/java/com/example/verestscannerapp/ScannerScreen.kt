@@ -165,6 +165,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val isManualInputMode by viewModel.isManualInputMode.collectAsState()
     val newNameInput by viewModel.newNameInput.collectAsState()
 
+    val activePrefixes by viewModel.customPrefixes.collectAsState()
+
     val rootFocusRequester = remember { FocusRequester() }
     val manualFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -979,7 +981,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         HorizontalDivider(color = Color.Black, thickness = 1.dp)
                                         Spacer(modifier = Modifier.height(16.dp))
 
-                                        val barcodeBitmap = remember(product.barcode) { generateBarcodeBitmap(product.barcode) }
+                                        val displayBarcode = remember(product.barcode, activePrefixes) {
+                                            val code = product.barcode
+                                            if (code.length <= 8 && activePrefixes.isNotEmpty()) {
+                                                val prefix = activePrefixes.first()
+                                                "$prefix$code" + "000000000"
+                                            } else {
+                                                code
+                                            }
+                                        }
+
+                                        val barcodeBitmap = remember(displayBarcode) { generateBarcodeBitmap(displayBarcode) }
 
                                         if (barcodeBitmap != null) {
                                             Image(
@@ -993,8 +1005,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         Spacer(modifier = Modifier.height(4.dp))
 
                                         Text(
-                                            text = product.barcode,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            text = displayBarcode,
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 2.sp),
                                             color = Color.Black,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()

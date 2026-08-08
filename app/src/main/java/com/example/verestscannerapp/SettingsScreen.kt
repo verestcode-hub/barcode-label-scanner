@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -48,6 +50,7 @@ fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
         when (targetScreen) {
             "Interface" -> InterfaceSettings(viewModel) { currentSubScreen = null }
             "Networks" -> NetworksSettings(viewModel) { currentSubScreen = null }
+            "Prefixes" -> PrefixesSettings(viewModel) { currentSubScreen = null }
             else -> {
                 SettingsBaseScaffold("Налаштування", onClose) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -67,6 +70,14 @@ fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
                         iconBgColor = MaterialTheme.colorScheme.tertiaryContainer,
                         iconTintColor = MaterialTheme.colorScheme.onTertiaryContainer
                     ) { currentSubScreen = "Networks" }
+
+                    SettingsItemCard(
+                        title = "Префікси штрих-кодів",
+                        desc = "Внутрішні коди клієнтів",
+                        icon = Icons.Default.Dialpad,
+                        iconBgColor = MaterialTheme.colorScheme.secondaryContainer,
+                        iconTintColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) { currentSubScreen = "Prefixes" }
                 }
             }
         }
@@ -247,5 +258,57 @@ fun NetworksSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { delNet = null; confirmText = "" }) { Text("Скасувати") } }
         )
+    }
+}
+
+@Composable
+fun PrefixesSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
+    val prefixes by viewModel.customPrefixes.collectAsState()
+    var newPrefix by remember { mutableStateOf("") }
+
+    BackHandler {
+        onBack()
+    }
+
+    SettingsBaseScaffold("Префікси штрих-кодів", onBack) {
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = newPrefix,
+                onValueChange = { newPrefix = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Новий префікс (напр. 1324)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = RoundedCornerShape(24.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                if (newPrefix.isNotBlank()) {
+                    viewModel.addPrefix(newPrefix)
+                    newPrefix = ""
+                }
+            }) { Text("Додати") }
+        }
+
+        if (prefixes.isNotEmpty()) {
+            Text("Список активних префіксів", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
+
+            prefixes.toList().sorted().forEach { prefix ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    ListItem(
+                        headlineContent = { Text(prefix, fontWeight = FontWeight.Medium) },
+                        trailingContent = {
+                            IconButton(onClick = { viewModel.removePrefix(prefix) }) {
+                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
+        }
     }
 }

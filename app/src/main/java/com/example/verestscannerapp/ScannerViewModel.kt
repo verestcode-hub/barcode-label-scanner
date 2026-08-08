@@ -56,6 +56,11 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     private val NETWORKS_KEY = stringSetPreferencesKey("custom_networks")
 
+    private val PREFIXES_KEY = stringSetPreferencesKey("custom_barcode_prefixes")
+
+    val customPrefixes: StateFlow<Set<String>> = application.dataStore.data.map { prefs ->
+        prefs[PREFIXES_KEY] ?: emptySet()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     private val _excelHeaders = MutableStateFlow<List<String>>(emptyList())
     val excelHeaders: StateFlow<List<String>> = _excelHeaders
 
@@ -184,6 +189,23 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         getApplication<Application>().dataStore.edit { prefs ->
             val current = prefs[NETWORKS_KEY] ?: emptySet()
             prefs[NETWORKS_KEY] = current - network
+        }
+    }
+
+    fun addPrefix(prefix: String) = viewModelScope.launch {
+        val trimmed = prefix.trim()
+        if (trimmed.isNotEmpty()) {
+            getApplication<Application>().dataStore.edit { prefs ->
+                val current = prefs[PREFIXES_KEY] ?: emptySet()
+                prefs[PREFIXES_KEY] = current + trimmed
+            }
+        }
+    }
+
+    fun removePrefix(prefix: String) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { prefs ->
+            val current = prefs[PREFIXES_KEY] ?: emptySet()
+            prefs[PREFIXES_KEY] = current - prefix
         }
     }
 
@@ -400,22 +422,59 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     }
 
     fun processBarcode(barcode: String) {
-        val cleanBarcode = barcode.trim()
+        // 1. Очищуємо від службових символів сканера (AIM Symbology Identifiers)
+        var cleanBarcode = barcode.trim()
+        if (cleanBarcode.length >= 3 && cleanBarcode.startsWith("]")) {
+            cleanBarcode = cleanBarcode.substring(3)
+        }
+
         if (cleanBarcode.isEmpty()) {
             clearCurrentProduct()
             return
         }
 
         viewModelScope.launch {
+            // 2. Спочатку шукаємо точний збіг
             var existing = dao.getProductByBarcode(cleanBarcode)
 
-            if (existing == null && cleanBarcode.length >= 6) {
+            // 3. ПРЯМИЙ ПРЕФІКС: Якщо користувач ввів КОРОТКИЙ код, а в базі він з префіксом
+            if (existing == null) {
+                val prefixes = customPrefixes.value
+                for (prefix in prefixes) {
+                    val combinedCode = prefix + cleanBarcode
+                    existing = dao.getProductByBarcode(combinedCode)
+                    if (existing != null) break
+                }
+            }
 
+            // 4. ЗВОРОТНИЙ ПРЕФІКС (ДЛЯ ВАГОВИХ ЕТИКЕТОК): Якщо сканер зчитав ДОВГИЙ код, а в базі він КОРОТКИЙ
+            if (existing == null) {
+                val prefixes = customPrefixes.value
+                for (prefix in prefixes) {
+                    if (cleanBarcode.startsWith(prefix)) {
+                        // Відрізаємо префікс
+                        val remainder = cleanBarcode.substring(prefix.length)
+
+                        // Перевіряємо точний залишок
+                        existing = dao.getProductByBarcode(remainder)
+                        if (existing != null) break
+
+                        // Якщо це довга вагова етикетка (витягуємо короткий код)
+                        if (remainder.length >= 8) {
+                            val extractedShortCode = remainder.substring(0, 8)
+                            existing = dao.getProductByBarcode(extractedShortCode)
+                            if (existing != null) break
+                        }
+                    }
+                }
+            }
+
+            // 5. Старі алгоритми доповнення (EAN-13, нулі)
+            if (existing == null && cleanBarcode.length >= 6) {
                 for (baseLength in 8 downTo 5) {
                     if (baseLength > cleanBarcode.length) continue
 
                     val baseCode = cleanBarcode.substring(0, baseLength)
-
                     existing = dao.getProductByBarcode(baseCode)
                     if (existing != null) break
 
@@ -432,6 +491,7 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 }
             }
 
+            // Передаємо результат на екран
             _scannedProduct.value = existing
             _lastScannedBarcode.value = if (existing == null) cleanBarcode else null
         }
@@ -611,7 +671,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                         }
                     }
 
-                    // 2. Читаємо перші 3 рядки з даними для візуалу
                     for (rowIndex in 1..5) {
                         val row = sheet.getRow(rowIndex)
                         val rowData = mutableListOf<String>()
