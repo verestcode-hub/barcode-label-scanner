@@ -175,6 +175,42 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         getApplication<Application>().dataStore.edit { it[IS_SORT_ASCENDING_KEY] = isAscending }
     }
 
+    private val ocrDictionary = mutableSetOf<String>()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            buildDictionaryFromDatabase()
+        }
+    }
+
+    private suspend fun buildDictionaryFromDatabase() {
+        try {
+            val allProducts = dao.getAllProductsList()
+            val uniqueWords = mutableSetOf<String>()
+
+            uniqueWords.addAll(setOf("КОВБАСА", "НАПІВКОПЧЕНА", "ВАРЕНА", "М'ЯСО", "СОСИСКИ", "САЛО", "БОКОВЕ", "СОРТ", "СВИНЯЧА", "ЯЛОВИЧА", "ФІЛЕ", "СУШЕНА", "ОХОЛОДЖЕНИЙ", "НАПІВФАБРИКАТ", "ВЕЛИКОШМАТКОВИЙ", "ДРІБНОШМАТКОВИЙ"))
+
+            for (product in allProducts) {
+
+                val words = product.name.split(Regex("[^А-Яа-яЄєІіЇїҐґA-Za-z'’]+"))
+                for (word in words) {
+                    if (word.length > 2) {
+                        uniqueWords.add(word.uppercase())
+                    }
+                }
+            }
+
+            ocrDictionary.clear()
+            ocrDictionary.addAll(uniqueWords)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getCorrectedOcrText(rawText: String): String {
+        return OcrCorrector.correctTextByWords(rawText, ocrDictionary)
+    }
+
     fun addNetwork(network: String) = viewModelScope.launch {
         val trimmed = network.trim()
         if (trimmed.isNotEmpty()) {
@@ -422,7 +458,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     }
 
     fun processBarcode(barcode: String) {
-        // 1. Очищуємо від службових символів сканера (AIM Symbology Identifiers)
         var cleanBarcode = barcode.trim()
         if (cleanBarcode.length >= 3 && cleanBarcode.startsWith("]")) {
             cleanBarcode = cleanBarcode.substring(3)
@@ -434,10 +469,8 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         }
 
         viewModelScope.launch {
-            // 2. Спочатку шукаємо точний збіг
             var existing = dao.getProductByBarcode(cleanBarcode)
 
-            // 3. ПРЯМИЙ ПРЕФІКС: Якщо користувач ввів КОРОТКИЙ код, а в базі він з префіксом
             if (existing == null) {
                 val prefixes = customPrefixes.value
                 for (prefix in prefixes) {
@@ -447,19 +480,15 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 }
             }
 
-            // 4. ЗВОРОТНИЙ ПРЕФІКС (ДЛЯ ВАГОВИХ ЕТИКЕТОК): Якщо сканер зчитав ДОВГИЙ код, а в базі він КОРОТКИЙ
             if (existing == null) {
                 val prefixes = customPrefixes.value
                 for (prefix in prefixes) {
                     if (cleanBarcode.startsWith(prefix)) {
-                        // Відрізаємо префікс
                         val remainder = cleanBarcode.substring(prefix.length)
 
-                        // Перевіряємо точний залишок
                         existing = dao.getProductByBarcode(remainder)
                         if (existing != null) break
 
-                        // Якщо це довга вагова етикетка (витягуємо короткий код)
                         if (remainder.length >= 8) {
                             val extractedShortCode = remainder.substring(0, 8)
                             existing = dao.getProductByBarcode(extractedShortCode)
@@ -469,7 +498,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 }
             }
 
-            // 5. Старі алгоритми доповнення (EAN-13, нулі)
             if (existing == null && cleanBarcode.length >= 6) {
                 for (baseLength in 8 downTo 5) {
                     if (baseLength > cleanBarcode.length) continue
@@ -491,7 +519,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 }
             }
 
-            // Передаємо результат на екран
             _scannedProduct.value = existing
             _lastScannedBarcode.value = if (existing == null) cleanBarcode else null
         }
@@ -592,6 +619,47 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         }
     }
 
+    data class OcrTextLine(val text: String, val rect: androidx.compose.ui.geometry.Rect)
+
+    fun performTextRecognitionWithBlocks(
+        context: Context,
+        bitmap: android.graphics.Bitmap,
+        onResult: (List<OcrTextLine>) -> Unit
+    ) {
+        try {
+            val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
+            val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(
+                com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS
+            )
+
+            recognizer.process(image)
+                .addOnSuccessListener { visionText ->
+                    val lines = mutableListOf<OcrTextLine>()
+                    for (block in visionText.textBlocks) {
+                        for (line in block.lines) {
+                            line.boundingBox?.let { androidRect ->
+
+                                val composeRect = androidx.compose.ui.geometry.Rect(
+                                    left = androidRect.left.toFloat(),
+                                    top = androidRect.top.toFloat(),
+                                    right = androidRect.right.toFloat(),
+                                    bottom = androidRect.bottom.toFloat()
+                                )
+                                lines.add(OcrTextLine(line.text, composeRect))
+                            }
+                        }
+                    }
+                    onResult(lines)
+                }
+                .addOnFailureListener {
+                    onResult(emptyList())
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onResult(emptyList())
+        }
+    }
+
     fun importDataFromJson(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -637,7 +705,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 val workbook = WorkbookFactory.create(inputStream)
                 val sheet = workbook.getSheetAt(0)
 
-                // Знаходимо максимальну кількість колонок по перших кількох рядках
                 var maxColumns = 0
                 for (i in 0..5) {
                     val row = sheet.getRow(i)
@@ -650,7 +717,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 val previewData = mutableListOf<List<String>>()
 
                 if (maxColumns > 0) {
-                    // 1. Формуємо заголовки
                     val firstRow = sheet.getRow(0)
                     for (i in 0 until maxColumns) {
                         var colNum = i + 1

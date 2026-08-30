@@ -178,6 +178,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val scanner = remember { GmsBarcodeScanning.getClient(context) }
 
+    // Змінні для нового Smart OCR екрана
+    var smartOcrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var smartOcrFile by remember { mutableStateOf<File?>(null) }
+
     val excelHeaders by viewModel.excelHeaders.collectAsState()
     val excelPreviewData by viewModel.excelPreviewData.collectAsState()
 
@@ -254,8 +258,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         withContext(Dispatchers.Main) {
                             if (origBitmap != null && cropBitmap != null) {
                                 viewModel.performTextRecognition(context, cropBitmap) { text ->
-                                    val cleanName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
-                                    viewModel.updateNewNameInput(cleanName)
+                                    // 1. Прибираємо зайві пробіли та ентери
+                                    var cleanName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                    // 2. Видаляємо всі небуквені знаки на самому початку рядка
+                                    cleanName = cleanName.replace(Regex("^[^А-Яа-яЄєІіЇїҐґA-Za-z]+"), "")
+
+                                    val correctedName = viewModel.getCorrectedOcrText(cleanName)
+                                    viewModel.updateNewNameInput(correctedName)
 
                                     viewModel.scanBarcodeFromBitmap(origBitmap, cropRect) { barcode ->
                                         isMagicScanning = false
@@ -270,6 +279,29 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             } else {
                                 isMagicScanning = false
                             }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        withContext(Dispatchers.Main) { isMagicScanning = false }
+                    }
+                }
+            }
+        } else {
+            isMagicScanning = false
+        }
+    }
+
+    // НОВИЙ Лаунчер камери для Smart OCR
+    val smartOcrCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            smartOcrFile?.let { file ->
+                isMagicScanning = true
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                        withContext(Dispatchers.Main) {
+                            smartOcrBitmap = bitmap
+                            isMagicScanning = false
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -716,19 +748,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 if (showMagicButton) {
                                     Button(
                                         onClick = {
-                                            magicCropLauncher.launch(
-                                                CropImageContractOptions(
-                                                    uri = null,
-                                                    cropImageOptions = CropImageOptions().apply {
-                                                        imageSourceIncludeCamera = true
-                                                        imageSourceIncludeGallery = false
-                                                        guidelines = CropImageView.Guidelines.ON
-                                                        allowRotation = true
-                                                        allowCounterRotation = true
-                                                        multiTouchEnabled = true
-                                                    }
-                                                )
-                                            )
+                                            val file = File(context.filesDir, "smart_ocr_${UUID.randomUUID()}.jpg")
+                                            smartOcrFile = file
+                                             val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                                            smartOcrCameraLauncher.launch(uri)
                                         },
                                         modifier = Modifier.fillMaxWidth().height(56.dp),
                                         colors = ButtonDefaults.buttonColors(
@@ -1038,7 +1061,10 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                                     if (bitmap != null) {
                                                                         withContext(Dispatchers.Main) {
                                                                             viewModel.performTextRecognition(context, bitmap) { text ->
-                                                                                viewModel.updateNewNameInput(text.replace("\n", " ").replace(Regex("\\s+"), " ").trim())
+                                                                                var cleanName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                                                                cleanName = cleanName.replace(Regex("^[^А-Яа-яЄєІіЇїҐґA-Za-z]+"), "")
+                                                                                val correctedName = viewModel.getCorrectedOcrText(cleanName)
+                                                                                viewModel.updateNewNameInput(correctedName)
                                                                                 isRecognizingText = false
                                                                             }
                                                                         }
@@ -1067,27 +1093,20 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                                                     Spacer(modifier = Modifier.width(8.dp))
 
+                                                    // Замість manualTextCropLauncher просто використовуємо наш новий лаунчер!
                                                     IconButton(
                                                         onClick = {
-                                                            manualTextCropLauncher.launch(
-                                                                CropImageContractOptions(
-                                                                    uri = null,
-                                                                    cropImageOptions = CropImageOptions().apply {
-                                                                        imageSourceIncludeGallery = true
-                                                                        imageSourceIncludeCamera = true
-                                                                        guidelines = CropImageView.Guidelines.ON
-                                                                        allowRotation = true
-                                                                        allowCounterRotation = true
-                                                                        multiTouchEnabled = true
-                                                                    }
-                                                                )
-                                                            )
+                                                            // Викликаємо ту саму камеру, що й для великої кнопки
+                                                            val file = File(context.filesDir, "smart_ocr_${UUID.randomUUID()}.jpg")
+                                                            smartOcrFile = file
+                                                            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                                                            smartOcrCameraLauncher.launch(uri)
                                                         },
                                                         modifier = Modifier
                                                             .size(56.dp)
                                                             .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
                                                     ) {
-                                                        if (isRecognizingText) {
+                                                        if (isMagicScanning) { // Використовуємо існуючий стан
                                                             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                                         } else {
                                                             Icon(
@@ -1174,6 +1193,44 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 }
                             }
                         }
+
+                        // Відображення нового екрана Smart OCR поверх усього
+                        // Відображення нового екрана Smart OCR поверх усього
+                        smartOcrBitmap?.let { bitmap ->
+                            Dialog(
+                                onDismissRequest = { smartOcrBitmap = null },
+                                properties = DialogProperties(usePlatformDefaultWidth = false)
+                            ) {
+                                SmartOcrScreen(
+                                    bitmap = bitmap,
+                                    viewModel = viewModel,
+                                    onDismiss = { smartOcrBitmap = null },
+                                    onBitmapCropped = { croppedBitmap ->
+                                        smartOcrBitmap = null
+
+                                        // МАГІЯ: Передаємо вирізаний шматок у ТВІЙ ідеальний OcrManager (Tesseract)!
+                                        viewModel.performTextRecognition(context, croppedBitmap) { text ->
+                                            var cleanName = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                                            cleanName = cleanName.replace(Regex("^[^А-Яа-яЄєІіЇїҐґA-Za-z]+"), "")
+                                            val correctedName = viewModel.getCorrectedOcrText(cleanName)
+                                            viewModel.updateNewNameInput(correctedName)
+                                        }
+
+                                        // Шукаємо штрих-код у фоні на повному фото
+                                        viewModel.scanBarcodeFromBitmap(bitmap, null) { barcode ->
+                                            if (barcode != null) {
+                                                viewModel.setIsCreating(true)
+                                                viewModel.processBarcode(barcode)
+                                            } else {
+                                                Toast.makeText(context, "Штрих-код не знайдено на фотографії", Toast.LENGTH_LONG).show()
+                                                viewModel.setIsCreating(true)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
                     }
                 }
             }
