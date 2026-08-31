@@ -92,12 +92,9 @@ import java.io.FileOutputStream
 import java.util.UUID
 import androidx.compose.foundation.horizontalScroll
 
-// -----------------------------------------------------------------------------------------
-// ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ЗБЕРЕЖЕННЯ ЗУМУ ТА ФОТОГРАФІЙ
-// -----------------------------------------------------------------------------------------
 
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
-    // Зберігаємо як PNG для підтримки прозорості (щоб був білий фон, а не чорний)
+
     val filename = "IMG_${UUID.randomUUID()}.png"
     val file = File(context.filesDir, filename)
     return try {
@@ -112,13 +109,11 @@ fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
     }
 }
 
-// Зберігаємо трансформації картинки локально, щоб вони не скидалися після перезапуску
 fun saveImageTransformLocally(context: Context, uri: String, scale: Float, offsetX: Float, offsetY: Float) {
     val prefs = context.getSharedPreferences("img_transforms", Context.MODE_PRIVATE)
     prefs.edit().putString(uri, "$scale,$offsetX,$offsetY").apply()
 }
 
-// Отримуємо збережені трансформації (scale, offsetX, offsetY)
 fun getImageTransformLocally(context: Context, uri: String): Triple<Float, Float, Float> {
     val prefs = context.getSharedPreferences("img_transforms", Context.MODE_PRIVATE)
     val str = prefs.getString(uri, "1.0,0.0,0.0") ?: "1.0,0.0,0.0"
@@ -193,13 +188,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val newNameInput by viewModel.newNameInput.collectAsState()
     val activePrefixes by viewModel.customPrefixes.collectAsState()
 
-    // ЗМІННІ ДЛЯ МАКЕТА
     val labelNameSize by viewModel.labelNameSize.collectAsState()
     val labelBarcodeSize by viewModel.labelBarcodeSize.collectAsState()
     val isLabelNameCaps by viewModel.isLabelNameCaps.collectAsState()
     val labelLineHeight by viewModel.labelLineHeight.collectAsState()
 
     var showLayoutSettings by remember { mutableStateOf(false) }
+    var isCardEditMode by rememberSaveable { mutableStateOf(false) }
 
     val rootFocusRequester = remember { FocusRequester() }
     val manualFocusRequester = remember { FocusRequester() }
@@ -350,7 +345,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                 scope.launch(Dispatchers.IO) {
                     try {
                         val inputStream = context.contentResolver.openInputStream(croppedUri)
-                        // Зберігаємо відкадроване як PNG для підтримки прозорості
                         val filename = "IMG_${UUID.randomUUID()}.png"
                         val file = File(context.filesDir, filename)
                         val outputStream = FileOutputStream(file)
@@ -510,7 +504,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     ModalBottomSheet(onDismissRequest = { showLayoutSettings = false }) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
 
-                            // 1. ЗАГОЛОВОК ТА КНОПКА "СКИНУТИ"
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -523,7 +516,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 )
                                 TextButton(
                                     onClick = {
-                                        // Скидаємо до стандартних значень
                                         viewModel.updateLabelSettings(22f, 18f, true, 28f)
                                     }
                                 ) {
@@ -533,7 +525,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 }
                             }
 
-                            // 2. ЖИВИЙ ПОПЕРЕДНІЙ ПЕРЕГЛЯД НАЗВИ ТОВАРУ
                             val rawName = scannedProduct?.name?.takeIf { it.isNotBlank() } ?: "САЛЯМІ ДОМАШНЯ\nВИЩОГО СОРТУ"
                             val previewName = if (isLabelNameCaps) rawName.uppercase() else rawName
 
@@ -575,7 +566,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
                             Text("Розмір шрифту штрих-коду: ${labelBarcodeSize.toInt()}", fontWeight = FontWeight.Bold)
 
-                            // 3. ЖИВИЙ ПОПЕРЕДНІЙ ПЕРЕГЛЯД ШТРИХ-КОДУ
                             val previewBarcode = scannedProduct?.barcode ?: "4823079700543"
                             val displayPreview = if (previewBarcode.length <= 8 && activePrefixes.isNotEmpty()) {
                                 "${activePrefixes.first()}$previewBarcode" + "000000000"
@@ -717,6 +707,20 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 ),
                                 modifier = Modifier.clickable { showThemeDialog = true }
                             )
+
+                            ListItem(
+                                headlineContent = { Text("Режим редагування", fontWeight = FontWeight.Bold) },
+                                supportingContent = { Text("Кнопки макета та фотографій") },
+                                trailingContent = {
+                                    Switch(
+                                        checked = isCardEditMode,
+                                        onCheckedChange = { isCardEditMode = it }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = MaterialTheme.colorScheme.primary, supportingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
+                                modifier = Modifier.clickable { isCardEditMode = !isCardEditMode }
+                            )
+
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                             Text(
@@ -1061,15 +1065,18 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
 
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.End
-                                        ) {
-                                            IconButton(
-                                                onClick = { showLayoutSettings = true },
-                                                modifier = Modifier.size(32.dp)
+                                        // 1. ХОВАЄМО ШЕСТІРНЮ В УМОВУ
+                                        if (isCardEditMode) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
                                             ) {
-                                                Icon(Icons.Default.Settings, "Налаштувати макет", tint = Color.Gray)
+                                                IconButton(
+                                                    onClick = { showLayoutSettings = true },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Settings, "Налаштувати макет", tint = Color.Gray)
+                                                }
                                             }
                                         }
 
@@ -1100,7 +1107,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 pageCount = { product.imageHistory.size }
                                             )
 
-                                            // АВТОМАТИЧНЕ ГОРТАННЯ ДО НОВОГО ФОТО
                                             LaunchedEffect(product.imagePath, product.imageHistory.size) {
                                                 val targetPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0)
                                                 if (pagerState.currentPage != targetPage) {
@@ -1115,7 +1121,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                             ) { page ->
                                                 val photoUri = product.imageHistory[page]
 
-                                                // Підвантажуємо збережені налаштування зуму
                                                 val savedTransform = remember(photoUri) { getImageTransformLocally(context, photoUri) }
                                                 var scale by remember(photoUri) { mutableFloatStateOf(savedTransform.first) }
                                                 var offsetX by remember(photoUri) { mutableFloatStateOf(savedTransform.second) }
@@ -1143,7 +1148,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                                     }
                                                                 }
                                                             } else {
-                                                                // ЗУМ ТІЛЬКИ ПІСЛЯ ЗАТИСКАННЯ ПАЛЬЦЕМ НА 1 СЕК (Long Press)
                                                                 detectTapGestures(onLongPress = { isZoomMode = true })
                                                             }
                                                         },
@@ -1160,10 +1164,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                                 translationX = offsetX,
                                                                 translationY = offsetY
                                                             ),
-                                                        contentScale = ContentScale.Fit // Fit краще для прозорих картинок (не обрізає краї)
+                                                        contentScale = ContentScale.Fit
                                                     )
 
-                                                    // ПАНЕЛЬ НАЛАШТУВАННЯ ЗУМУ
                                                     if (isZoomMode) {
                                                         Box(
                                                             modifier = Modifier
@@ -1211,28 +1214,31 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                         }
                                                     }
 
-                                                    // СТАНДАРТНІ КНОПКИ (Показуються тільки якщо ми НЕ зумуємо)
                                                     if (!isZoomMode) {
-                                                        IconButton(
-                                                            onClick = {
-                                                                val options = CropImageContractOptions(Uri.parse(photoUri), CropImageOptions(
-                                                                    fixAspectRatio = true,
-                                                                    aspectRatioX = 16,
-                                                                    aspectRatioY = 9,
-                                                                    imageSourceIncludeCamera = false,
-                                                                    outputCompressFormat = Bitmap.CompressFormat.PNG
-                                                                ))
-                                                                imageCropLauncher.launch(options)
-                                                            },
-                                                            modifier = Modifier
-                                                                .align(Alignment.TopStart)
-                                                                .padding(8.dp)
-                                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                                .size(36.dp)
-                                                        ) {
-                                                            Icon(Icons.Default.Edit, contentDescription = "Кадрувати", tint = Color.White, modifier = Modifier.size(20.dp))
+                                                        // 2. ХОВАЄМО ОЛІВЕЦЬ КАДРУВАННЯ В УМОВУ
+                                                        if (isCardEditMode) {
+                                                            IconButton(
+                                                                onClick = {
+                                                                    val options = CropImageContractOptions(Uri.parse(photoUri), CropImageOptions(
+                                                                        fixAspectRatio = true,
+                                                                        aspectRatioX = 16,
+                                                                        aspectRatioY = 9,
+                                                                        imageSourceIncludeCamera = false,
+                                                                        outputCompressFormat = Bitmap.CompressFormat.PNG
+                                                                    ))
+                                                                    imageCropLauncher.launch(options)
+                                                                },
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopStart)
+                                                                    .padding(8.dp)
+                                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                                    .size(36.dp)
+                                                            ) {
+                                                                Icon(Icons.Default.Edit, contentDescription = "Кадрувати", tint = Color.White, modifier = Modifier.size(20.dp))
+                                                            }
                                                         }
 
+                                                        // А от ярлик "Основне" залишаємо завжди
                                                         if (photoUri == product.imagePath) {
                                                             Surface(
                                                                 color = Color.Black.copy(alpha = 0.6f),
@@ -1246,38 +1252,41 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Row(
-                                                modifier = Modifier.wrapContentHeight().fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.Center
-                                            ) {
-                                                repeat(product.imageHistory.size) { iteration ->
-                                                    val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
-                                                    Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                if (currentPagerPhoto != product.imagePath) {
-                                                    Button(
-                                                        onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                                    ) {
-                                                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text("Зберегти як основну")
+                                            // 3. ХОВАЄМО КРАПКИ І НИЖНІ КНОПКИ В УМОВУ
+                                            if (isCardEditMode) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Row(
+                                                    modifier = Modifier.wrapContentHeight().fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    repeat(product.imageHistory.size) { iteration ->
+                                                        val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
+                                                        Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
                                                     }
                                                 }
-                                                TextButton(onClick = { showBottomSheet = true }) {
-                                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Додати варіант")
+
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (currentPagerPhoto != product.imagePath) {
+                                                        Button(
+                                                            onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                        ) {
+                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text("Зберегти як основну")
+                                                        }
+                                                    }
+                                                    TextButton(onClick = { showBottomSheet = true }) {
+                                                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text("Додати варіант")
+                                                    }
                                                 }
                                             }
 
@@ -1335,6 +1344,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                         )
                                     }
                                 }
+
                                 Spacer(modifier = Modifier.height(32.dp))
 
                             } ?: run {
