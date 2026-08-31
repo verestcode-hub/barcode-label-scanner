@@ -58,6 +58,27 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     private val PREFIXES_KEY = stringSetPreferencesKey("custom_barcode_prefixes")
 
+    private val LABEL_NAME_SIZE_KEY = floatPreferencesKey("label_name_size")
+    private val LABEL_BARCODE_SIZE_KEY = floatPreferencesKey("label_barcode_size")
+    private val LABEL_NAME_CAPS_KEY = booleanPreferencesKey("label_name_caps")
+    private val LABEL_LINE_HEIGHT_KEY = floatPreferencesKey("label_line_height")
+
+    val labelNameSize: StateFlow<Float> = application.dataStore.data.map { prefs ->
+        prefs[LABEL_NAME_SIZE_KEY] ?: 22f // 22f - розмір за замовчуванням
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 22f)
+
+    val labelLineHeight: StateFlow<Float> = application.dataStore.data.map { prefs ->
+        prefs[LABEL_LINE_HEIGHT_KEY] ?: 28f // 28f - міжрядковий відступ за замовчуванням
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 28f)
+
+    val labelBarcodeSize: StateFlow<Float> = application.dataStore.data.map { prefs ->
+        prefs[LABEL_BARCODE_SIZE_KEY] ?: 18f // 18f - розмір за замовчуванням
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 18f)
+
+    val isLabelNameCaps: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[LABEL_NAME_CAPS_KEY] ?: true // За замовчуванням КАПС увімкнено
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val customPrefixes: StateFlow<Set<String>> = application.dataStore.data.map { prefs ->
         prefs[PREFIXES_KEY] ?: emptySet()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -234,6 +255,17 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             getApplication<Application>().dataStore.edit { prefs ->
                 val current = prefs[PREFIXES_KEY] ?: emptySet()
                 prefs[PREFIXES_KEY] = current + trimmed
+            }
+        }
+    }
+
+    fun updateLabelSettings(nameSize: Float, barcodeSize: Float, isCaps: Boolean, lineHeight: Float) {
+        viewModelScope.launch {
+            getApplication<Application>().dataStore.edit { prefs ->
+                prefs[LABEL_NAME_SIZE_KEY] = nameSize
+                prefs[LABEL_BARCODE_SIZE_KEY] = barcodeSize
+                prefs[LABEL_NAME_CAPS_KEY] = isCaps
+                prefs[LABEL_LINE_HEIGHT_KEY] = lineHeight
             }
         }
     }
