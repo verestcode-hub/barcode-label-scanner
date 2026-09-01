@@ -366,11 +366,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let {
             val options = CropImageContractOptions(it, CropImageOptions(
-                fixAspectRatio = true,
-                aspectRatioX = 16,
-                aspectRatioY = 9,
+                fixAspectRatio = false,
                 imageSourceIncludeCamera = false,
-                outputCompressFormat = Bitmap.CompressFormat.PNG // Вирізаємо з підтримкою прозорості
+                outputCompressFormat = Bitmap.CompressFormat.PNG,
+
+                borderLineColor = android.graphics.Color.BLACK,
+                borderCornerColor = android.graphics.Color.BLACK,
+                guidelinesColor = android.graphics.Color.BLACK
             ))
             imageCropLauncher.launch(options)
         }
@@ -383,11 +385,13 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             tempImageFile?.let { file ->
                 val uri = Uri.fromFile(file)
                 val options = CropImageContractOptions(uri, CropImageOptions(
-                    fixAspectRatio = true,
-                    aspectRatioX = 16,
-                    aspectRatioY = 9,
+                    fixAspectRatio = false,
                     imageSourceIncludeCamera = false,
-                    outputCompressFormat = Bitmap.CompressFormat.PNG // Вирізаємо з підтримкою прозорості
+                    outputCompressFormat = Bitmap.CompressFormat.PNG,
+
+                    borderLineColor = android.graphics.Color.BLACK,
+                    borderCornerColor = android.graphics.Color.BLACK,
+                    guidelinesColor = android.graphics.Color.BLACK
                 ))
                 imageCropLauncher.launch(options)
             }
@@ -1136,16 +1140,16 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                         .pointerInput(isZoomMode) {
                                                             if (isZoomMode) {
                                                                 detectTransformGestures { _, pan, zoom, _ ->
-                                                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                                                    if (scale > 1f) {
-                                                                        val maxX = (size.width * (scale - 1)) / 2
-                                                                        val maxY = (size.height * (scale - 1)) / 2
-                                                                        offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
-                                                                        offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
-                                                                    } else {
-                                                                        offsetX = 0f
-                                                                        offsetY = 0f
-                                                                    }
+                                                                    // ЗМІНЕНО: Тепер мінімальний ліміт 0.3f (можна віддалити в 3 рази!)
+                                                                    scale = (scale * zoom).coerceIn(0.3f, 5f)
+
+                                                                    // Універсальна математика: не дає фотографії вилетіти за краї
+                                                                    // ні при сильному наближенні, ні при сильному віддаленні
+                                                                    val maxX = (size.width * kotlin.math.abs(scale - 1)) / 2
+                                                                    val maxY = (size.height * kotlin.math.abs(scale - 1)) / 2
+
+                                                                    offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                                                    offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
                                                                 }
                                                             } else {
                                                                 detectTapGestures(onLongPress = { isZoomMode = true })
@@ -1215,16 +1219,17 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                                     }
 
                                                     if (!isZoomMode) {
-                                                        // 2. ХОВАЄМО ОЛІВЕЦЬ КАДРУВАННЯ В УМОВУ
                                                         if (isCardEditMode) {
                                                             IconButton(
                                                                 onClick = {
                                                                     val options = CropImageContractOptions(Uri.parse(photoUri), CropImageOptions(
-                                                                        fixAspectRatio = true,
-                                                                        aspectRatioX = 16,
-                                                                        aspectRatioY = 9,
+                                                                        fixAspectRatio = false,
                                                                         imageSourceIncludeCamera = false,
-                                                                        outputCompressFormat = Bitmap.CompressFormat.PNG
+                                                                        outputCompressFormat = Bitmap.CompressFormat.PNG,
+
+                                                                        borderLineColor = android.graphics.Color.BLACK,
+                                                                        borderCornerColor = android.graphics.Color.BLACK,
+                                                                        guidelinesColor = android.graphics.Color.BLACK
                                                                     ))
                                                                     imageCropLauncher.launch(options)
                                                                 },

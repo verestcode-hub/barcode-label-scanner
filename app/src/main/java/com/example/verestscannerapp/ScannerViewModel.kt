@@ -97,6 +97,29 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         _excelPreviewData.value = emptyList()
     }
 
+    private val AUTO_BACKUP_FREQ_KEY = stringPreferencesKey("auto_backup_freq")
+    private val AUTO_BACKUP_URI_KEY = stringPreferencesKey("auto_backup_uri")
+
+    val autoBackupFrequency: StateFlow<String> = application.dataStore.data.map { prefs ->
+        prefs[AUTO_BACKUP_FREQ_KEY] ?: "Ніколи"
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Ніколи")
+
+    val autoBackupUri: StateFlow<String> = application.dataStore.data.map { prefs ->
+        prefs[AUTO_BACKUP_URI_KEY] ?: ""
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    fun setAutoBackupFrequency(freq: String) {
+        viewModelScope.launch {
+            getApplication<Application>().dataStore.edit { it[AUTO_BACKUP_FREQ_KEY] = freq }
+        }
+    }
+
+    fun setAutoBackupUri(uri: String) {
+        viewModelScope.launch {
+            getApplication<Application>().dataStore.edit { it[AUTO_BACKUP_URI_KEY] = uri }
+        }
+    }
+
     val themeMode: StateFlow<ThemeMode> = application.dataStore.data.map { prefs ->
         try { ThemeMode.valueOf(prefs[THEME_KEY] ?: ThemeMode.SYSTEM.name) } catch (e: Exception) { ThemeMode.SYSTEM }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
@@ -258,7 +281,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             }
         }
     }
-
     fun updateLabelSettings(nameSize: Float, barcodeSize: Float, isCaps: Boolean, lineHeight: Float) {
         viewModelScope.launch {
             getApplication<Application>().dataStore.edit { prefs ->

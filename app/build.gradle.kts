@@ -67,4 +67,5 @@ dependencies {
 
     implementation("org.apache.poi:poi:5.2.3")
     implementation("org.apache.poi:poi-ooxml:5.2.3")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

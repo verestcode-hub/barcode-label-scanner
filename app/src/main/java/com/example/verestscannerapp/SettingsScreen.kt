@@ -2,7 +2,10 @@
 
 package com.example.verestscannerapp
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -25,9 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
@@ -51,6 +56,9 @@ fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
             "Interface" -> InterfaceSettings(viewModel) { currentSubScreen = null }
             "Networks" -> NetworksSettings(viewModel) { currentSubScreen = null }
             "Prefixes" -> PrefixesSettings(viewModel) { currentSubScreen = null }
+            "AutoBackup" -> AutoBackupSettings(viewModel) { currentSubScreen = null }
+            "About" -> AboutDeveloperScreen { currentSubScreen = null }
+
             else -> {
                 SettingsBaseScaffold("Налаштування", onClose) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -78,6 +86,143 @@ fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
                         iconBgColor = MaterialTheme.colorScheme.secondaryContainer,
                         iconTintColor = MaterialTheme.colorScheme.onSecondaryContainer
                     ) { currentSubScreen = "Prefixes" }
+
+                    SettingsItemCard(
+                        title = "Автобекап",
+                        desc = "Налаштування резервного копіювання",
+                        icon = Icons.Default.CloudSync,
+                        iconBgColor = MaterialTheme.colorScheme.errorContainer,
+                        iconTintColor = MaterialTheme.colorScheme.onErrorContainer
+                    ) { currentSubScreen = "AutoBackup" }
+
+                    SettingsItemCard(
+                        title = "Про додаток та Підтримка",
+                        desc = "Версія, зв'язок з розробником",
+                        icon = Icons.Default.Info,
+                        iconBgColor = MaterialTheme.colorScheme.primary,
+                        iconTintColor = MaterialTheme.colorScheme.onPrimary
+                    ) { currentSubScreen = "About" }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutDeveloperScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    var clickCount by remember { mutableStateOf(0) }
+
+    BackHandler {
+        onBack()
+    }
+
+    SettingsBaseScaffold("Про додаток", onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(50.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Verest Scanner",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Версія 1.0.0",
+                color = Color.Gray,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Розробка та підтримка:", color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Green Crane",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            clickCount++
+                            if (clickCount == 7) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "🎉 Вітаю! Ви знайшли пасхалку! З любов'ю, Розробник 😉",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                                clickCount = 0
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://t.me/nazarzajcev3")
+                            )
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0088CC))
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Написати в Telegram")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                                data = android.net.Uri.parse("mailto:nazarzajcev3@gmail.com")
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Підтримка: Verest Scanner")
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "Поштовий додаток не знайдено", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Написати на Email")
+                    }
                 }
             }
         }
@@ -307,6 +452,105 @@ fun PrefixesSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AutoBackupSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    val backupFreq by viewModel.autoBackupFrequency.collectAsState()
+    val backupUri by viewModel.autoBackupUri.collectAsState()
+    var expandedFreq by remember { mutableStateOf(false) }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            context.contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            viewModel.setAutoBackupUri(it.toString())
+        }
+    }
+
+    BackHandler {
+        onBack()
+    }
+
+    SettingsBaseScaffold("Резервне копіювання", onBack) {
+        Text("Налаштування автобекапу", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 16.dp))
+
+        // ВИБІР ЧАСТОТИ (Додано "Щомісяця")
+        ExposedDropdownMenuBox(
+            expanded = expandedFreq,
+            onExpandedChange = { expandedFreq = it }
+        ) {
+            OutlinedTextField(
+                value = backupFreq,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Частота бекапу") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFreq) },
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                shape = RoundedCornerShape(24.dp)
+            )
+            ExposedDropdownMenu(expanded = expandedFreq, onDismissRequest = { expandedFreq = false }) {
+                listOf("Ніколи", "Щодня", "Щотижня", "Щомісяця").forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            viewModel.setAutoBackupFrequency(option)
+                            expandedFreq = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ВИБІР ПАПКИ
+        if (backupFreq != "Ніколи") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Місце збереження:", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (backupUri.isEmpty()) "За замовчуванням (внутрішня пам'ять)" else "Власна папка (або Google Диск) обрана",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "💡 Підказка: Виберіть папку вашого Google Диску у системному вікні, щоб бекапи одразу летіли в хмару.",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = { folderPickerLauncher.launch(null) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Змінити папку")
+                    }
+
+                    if (backupUri.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(
+                            onClick = { viewModel.setAutoBackupUri("") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Скинути за замовчуванням", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
             }
         }
