@@ -92,9 +92,7 @@ import java.io.FileOutputStream
 import java.util.UUID
 import androidx.compose.foundation.horizontalScroll
 
-
 fun saveBitmapToInternalStorage(context: Context, bitmap: Bitmap): String {
-
     val filename = "IMG_${UUID.randomUUID()}.png"
     val file = File(context.filesDir, filename)
     return try {
@@ -179,6 +177,8 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val gridState = rememberLazyGridState()
 
     val scannedProduct by viewModel.scannedProduct.collectAsState()
+    val conflictProducts by viewModel.conflictProducts.collectAsState()
+    val resolveWithDialog by viewModel.resolveWithDialog.collectAsState()
     val saveStatus by viewModel.saveStatus.collectAsState()
     val lastScannedBarcode by viewModel.lastScannedBarcode.collectAsState()
 
@@ -200,7 +200,6 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     val manualFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    var isEditing by remember { mutableStateOf(false) }
     var showBottomSheet by remember { mutableStateOf(false) }
     var isMagicScanning by remember { mutableStateOf(false) }
 
@@ -537,7 +536,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Black,
                                     fontSize = labelNameSize.sp,
-                                    lineHeight = labelLineHeight.sp // Застосовується відступ!
+                                    lineHeight = labelLineHeight.sp
                                 ),
                                 color = Color.Black,
                                 textAlign = TextAlign.Center,
@@ -545,7 +544,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                     .fillMaxWidth()
                                     .padding(bottom = 16.dp)
                                     .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
-                                    .padding(16.dp) // Трохи більше внутрішнього відступу для краси
+                                    .padding(16.dp)
                             )
 
                             Text("Розмір шрифту назви: ${labelNameSize.toInt()}", fontWeight = FontWeight.Bold)
@@ -655,6 +654,58 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                     )
                 }
 
+                if (conflictProducts.isNotEmpty() && resolveWithDialog) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.clearConflicts() },
+                        title = { Text("Уточнення товару") },
+                        text = {
+                            Column {
+                                Text("Знайдено ${conflictProducts.size} збіги з однаковим базовим кодом. Оберіть потрібний:")
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                                    items(conflictProducts) { product ->
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .clickable {
+                                                    viewModel.resolveConflict(product)
+                                                    rootFocusRequester.requestFocus()
+                                                    keyboardController?.hide()
+                                                },
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Text(
+                                                    text = product.name.ifEmpty { "Без назви" },
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = "PLU: ${product.plu.ifEmpty { "Немає" }} | Клієнт: ${product.groupPlu.ifEmpty { "Немає" }}",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                                Text(
+                                                    text = "Код: ${product.barcode}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.Gray
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { viewModel.clearConflicts() }) {
+                                Text("Скасувати")
+                            }
+                        }
+                    )
+                }
+
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
@@ -723,6 +774,19 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = MaterialTheme.colorScheme.primary, supportingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
                                 modifier = Modifier.clickable { isCardEditMode = !isCardEditMode }
+                            )
+
+                            ListItem(
+                                headlineContent = { Text("Діалог при збігах", fontWeight = FontWeight.Bold) },
+                                supportingContent = { Text("Запитувати, якщо кілька товарів") },
+                                trailingContent = {
+                                    Switch(
+                                        checked = resolveWithDialog,
+                                        onCheckedChange = { viewModel.setResolveWithDialog(it) }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = MaterialTheme.colorScheme.primary, supportingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
+                                modifier = Modifier.clickable { viewModel.setResolveWithDialog(!resolveWithDialog) }
                             )
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -878,7 +942,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text("Розпізнавання етикетки...", style = MaterialTheme.typography.bodyLarge)
-                            } else if (scannedProduct == null && lastScannedBarcode == null) {
+                            } else if (scannedProduct == null && lastScannedBarcode == null && conflictProducts.isEmpty()) {
                                 if (showScanButton) {
                                     Button(
                                         onClick = {
@@ -934,425 +998,501 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
-                            scannedProduct?.let { product ->
-                                OutlinedButton(
-                                    onClick = {
-                                        viewModel.clearCurrentProduct()
-                                        if (isViewingFromInventory) {
-                                            currentMainScreen = "INVENTORY"
-                                        } else {
-                                            rootFocusRequester.requestFocus()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(if (isViewingFromInventory) "Повернутися в інвентар" else "Закрити картку товару")
-                                }
+                            val productsToShow = if (conflictProducts.isNotEmpty() && !resolveWithDialog) {
+                                conflictProducts
+                            } else {
+                                listOfNotNull(scannedProduct)
+                            }
 
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        if (isEditing) {
-                                            var nameInput by remember(product.barcode) { mutableStateOf(product.name) }
-                                            var pluInput by remember(product.barcode) { mutableStateOf(product.plu) }
-                                            var dateInput by remember(product.barcode) { mutableStateOf(product.useByDate) }
-                                            var groupInput by remember(product.barcode) { mutableStateOf(product.groupPlu) }
+                            if (productsToShow.isNotEmpty()) {
 
-                                            val networks by viewModel.customNetworks.collectAsState()
-                                            var expandedNetwork by remember { mutableStateOf(false) }
-
-                                            OutlinedTextField(
-                                                value = nameInput,
-                                                onValueChange = { nameInput = it },
-                                                label = { Text("Назва товару") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            OutlinedTextField(
-                                                value = pluInput,
-                                                onValueChange = { pluInput = it },
-                                                label = { Text("Код PLU") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            OutlinedTextField(
-                                                value = dateInput,
-                                                onValueChange = { dateInput = it },
-                                                label = { Text("Термін придатності") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                            ExposedDropdownMenuBox(
-                                                expanded = expandedNetwork,
-                                                onExpandedChange = {
-                                                    expandedNetwork = it
-                                                    if (it) keyboardController?.hide()
-                                                }
-                                            ) {
-                                                OutlinedTextField(
-                                                    value = groupInput,
-                                                    onValueChange = { groupInput = it },
-                                                    label = { Text("Клієнт") },
-                                                    readOnly = expandedNetwork,
-                                                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedNetwork) },
-                                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                                                )
-                                                ExposedDropdownMenu(
-                                                    expanded = expandedNetwork,
-                                                    onDismissRequest = { expandedNetwork = false }
-                                                ) {
-                                                    networks.forEach { selectionOption ->
-                                                        DropdownMenuItem(
-                                                            text = { Text(selectionOption) },
-                                                            onClick = {
-                                                                groupInput = selectionOption
-                                                                expandedNetwork = false
-                                                            }
-                                                        )
-                                                    }
-                                                }
+                                // ГЛОБАЛЬНА КНОПКА СКАСУВАННЯ ТА ТЕКСТ (ТІЛЬКИ ДЛЯ ДЕКІЛЬКОХ КАРТОК)
+                                if (productsToShow.size > 1) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Увага: Знайдено ${productsToShow.size} збіги!",
+                                            color = MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.clearCurrentProduct()
+                                                rootFocusRequester.requestFocus()
                                             }
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            Button(
-                                                onClick = {
-                                                    viewModel.updateProductDetails(nameInput, pluInput, dateInput, groupInput)
-                                                    isEditing = false
-                                                    rootFocusRequester.requestFocus()
-                                                    keyboardController?.hide()
-                                                }
-                                            ) {
-                                                Text("Зберегти зміни")
-                                            }
-                                        } else {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text(text = "Системні дані:", fontWeight = FontWeight.Bold)
-                                                Button(
-                                                    onClick = { isEditing = true },
-                                                    colors = ButtonDefaults.buttonColors(
-                                                        containerColor = MaterialTheme.colorScheme.secondary,
-                                                        contentColor = MaterialTheme.colorScheme.onSecondary
-                                                    )
-                                                ) {
-                                                    Text("Редагувати")
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(text = "Клієнт: ${product.groupPlu.ifEmpty { "Не вказано" }}")
-                                            Text(text = "Назва: ${product.name.ifEmpty { "Без назви" }}")
-                                            Text(text = "Код: ${product.barcode}")
-                                            Text(text = "PLU: ${product.plu.ifEmpty { "Не вказано" }}")
-                                            Text(text = "Дата придатності: ${product.useByDate.ifEmpty { "Не вказано" }}")
+                                        ) {
+                                            Text("Скасувати", color = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(16.dp))
+                                // РОЗУМНИЙ СКРОЛ: Вмикається ТІЛЬКИ якщо товарів 3 або більше
+                                val useScroll = productsToShow.size > 2
+                                val rowScrollState = rememberScrollState()
+                                val rowModifier = if (useScroll) {
+                                    Modifier.fillMaxWidth().horizontalScroll(rowScrollState)
+                                } else {
+                                    Modifier.fillMaxWidth()
+                                }
 
-                                Card(
-                                    modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    border = BorderStroke(2.dp, Color.Black),
-                                    shape = RoundedCornerShape(8.dp)
+                                Row(
+                                    modifier = rowModifier,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
+                                    productsToShow.forEach { product ->
+                                        key(product.barcode, product.plu) {
+                                            var isEditing by remember { mutableStateOf(false) }
 
-                                        // 1. ХОВАЄМО ШЕСТІРНЮ В УМОВУ
-                                        if (isCardEditMode) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.End
-                                            ) {
-                                                IconButton(
-                                                    onClick = { showLayoutSettings = true },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Settings, "Налаштувати макет", tint = Color.Gray)
-                                                }
-                                            }
-                                        }
-
-                                        val displayName = if (isLabelNameCaps) {
-                                            product.name.ifEmpty { "БЕЗ НАЗВИ" }.uppercase()
-                                        } else {
-                                            product.name.ifEmpty { "Без назви" }
-                                        }
-
-                                        Text(
-                                            text = displayName,
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                fontWeight = FontWeight.Black,
-                                                fontSize = labelNameSize.sp,
-                                                lineHeight = labelLineHeight.sp
-                                            ),
-                                            color = Color.Black,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        if (product.imageHistory.isNotEmpty()) {
-                                            val initialPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0)
-                                            val pagerState = rememberPagerState(
-                                                initialPage = initialPage,
-                                                pageCount = { product.imageHistory.size }
-                                            )
-
-                                            LaunchedEffect(product.imagePath, product.imageHistory.size) {
-                                                val targetPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0)
-                                                if (pagerState.currentPage != targetPage) {
-                                                    pagerState.animateScrollToPage(targetPage)
-                                                }
+                                            // Якщо скролу немає (1-2 товари) - вони ділять екран навпіл через weight(1f)
+                                            val columnModifier = if (useScroll) {
+                                                Modifier.width(380.dp)
+                                            } else {
+                                                Modifier.weight(1f)
                                             }
 
-                                            HorizontalPager(
-                                                state = pagerState,
-                                                modifier = Modifier.fillMaxWidth().height(220.dp),
-                                                userScrollEnabled = true // Завжди ввімкнено для гортання!
-                                            ) { page ->
-                                                val photoUri = product.imageHistory[page]
+                                            Column(modifier = columnModifier) {
 
-                                                val savedTransform = remember(photoUri) { getImageTransformLocally(context, photoUri) }
-                                                var scale by remember(photoUri) { mutableFloatStateOf(savedTransform.first) }
-                                                var offsetX by remember(photoUri) { mutableFloatStateOf(savedTransform.second) }
-                                                var offsetY by remember(photoUri) { mutableFloatStateOf(savedTransform.third) }
-
-                                                var isZoomMode by remember { mutableStateOf(false) }
-
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color.White) // БІЛИЙ ФОН ДЛЯ ПРОЗОРИХ PNG
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .pointerInput(isZoomMode) {
-                                                            if (isZoomMode) {
-                                                                detectTransformGestures { _, pan, zoom, _ ->
-                                                                    // ЗМІНЕНО: Тепер мінімальний ліміт 0.3f (можна віддалити в 3 рази!)
-                                                                    scale = (scale * zoom).coerceIn(0.3f, 5f)
-
-                                                                    // Універсальна математика: не дає фотографії вилетіти за краї
-                                                                    // ні при сильному наближенні, ні при сильному віддаленні
-                                                                    val maxX = (size.width * kotlin.math.abs(scale - 1)) / 2
-                                                                    val maxY = (size.height * kotlin.math.abs(scale - 1)) / 2
-
-                                                                    offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
-                                                                    offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
-                                                                }
+                                                // ЛОГІКА КНОПОК
+                                                if (productsToShow.size > 1) {
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.resolveConflict(product)
+                                                            rootFocusRequester.requestFocus()
+                                                            keyboardController?.hide()
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text("Обрати цей товар")
+                                                    }
+                                                } else {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            viewModel.clearCurrentProduct()
+                                                            if (isViewingFromInventory) {
+                                                                currentMainScreen = "INVENTORY"
                                                             } else {
-                                                                detectTapGestures(onLongPress = { isZoomMode = true })
+                                                                rootFocusRequester.requestFocus()
                                                             }
                                                         },
+                                                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(if (isViewingFromInventory) "Повернутися в інвентар" else "Закрити картку товару")
+                                                    }
+                                                }
+
+                                                // СИСТЕМНІ ДАНІ (Розтягуються на всю ширину стовпця/екрану)
+                                                Card(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(16.dp)) {
+                                                        if (isEditing) {
+                                                            var nameInput by remember(product.barcode) { mutableStateOf(product.name) }
+                                                            var pluInput by remember(product.barcode) { mutableStateOf(product.plu) }
+                                                            var dateInput by remember(product.barcode) { mutableStateOf(product.useByDate) }
+                                                            var groupInput by remember(product.barcode) { mutableStateOf(product.groupPlu) }
+
+                                                            val networks by viewModel.customNetworks.collectAsState()
+                                                            var expandedNetwork by remember { mutableStateOf(false) }
+
+                                                            OutlinedTextField(
+                                                                value = nameInput,
+                                                                onValueChange = { nameInput = it },
+                                                                label = { Text("Назва товару") },
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            OutlinedTextField(
+                                                                value = pluInput,
+                                                                onValueChange = { pluInput = it },
+                                                                label = { Text("Код PLU") },
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            OutlinedTextField(
+                                                                value = dateInput,
+                                                                onValueChange = { dateInput = it },
+                                                                label = { Text("Термін придатності") },
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+                                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                                            ExposedDropdownMenuBox(
+                                                                expanded = expandedNetwork,
+                                                                onExpandedChange = {
+                                                                    expandedNetwork = it
+                                                                    if (it) keyboardController?.hide()
+                                                                }
+                                                            ) {
+                                                                OutlinedTextField(
+                                                                    value = groupInput,
+                                                                    onValueChange = { groupInput = it },
+                                                                    label = { Text("Клієнт") },
+                                                                    readOnly = expandedNetwork,
+                                                                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedNetwork) },
+                                                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                                                                )
+                                                                ExposedDropdownMenu(
+                                                                    expanded = expandedNetwork,
+                                                                    onDismissRequest = { expandedNetwork = false }
+                                                                ) {
+                                                                    networks.forEach { selectionOption ->
+                                                                        DropdownMenuItem(
+                                                                            text = { Text(selectionOption) },
+                                                                            onClick = {
+                                                                                groupInput = selectionOption
+                                                                                expandedNetwork = false
+                                                                            }
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.height(16.dp))
+                                                            Button(
+                                                                onClick = {
+                                                                    viewModel.updateProductDetails(nameInput, pluInput, dateInput, groupInput)
+                                                                    isEditing = false
+                                                                    rootFocusRequester.requestFocus()
+                                                                    keyboardController?.hide()
+                                                                }
+                                                            ) {
+                                                                Text("Зберегти зміни")
+                                                            }
+                                                        } else {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                Text(text = "Системні дані:", fontWeight = FontWeight.Bold)
+
+                                                                if (productsToShow.size == 1) {
+                                                                    Button(
+                                                                        onClick = { isEditing = true },
+                                                                        colors = ButtonDefaults.buttonColors(
+                                                                            containerColor = MaterialTheme.colorScheme.secondary,
+                                                                            contentColor = MaterialTheme.colorScheme.onSecondary
+                                                                        )
+                                                                    ) {
+                                                                        Text("Редагувати")
+                                                                    }
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            Text(text = "Клієнт: ${product.groupPlu.ifEmpty { "Не вказано" }}")
+                                                            Text(text = "Назва: ${product.name.ifEmpty { "Без назви" }}")
+                                                            Text(text = "Код: ${product.barcode}")
+                                                            Text(text = "PLU: ${product.plu.ifEmpty { "Не вказано" }}")
+                                                            Text(text = "Дата придатності: ${product.useByDate.ifEmpty { "Не вказано" }}")
+                                                        }
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(16.dp))
+
+                                                // КАРТКА ЕТИКЕТКИ: Центрована, максимальна ширина 420.dp
+                                                Box(
+                                                    modifier = Modifier.fillMaxWidth(),
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    AsyncImage(
-                                                        model = photoUri,
-                                                        contentDescription = "Фото варіант $page",
+                                                    Card(
                                                         modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .graphicsLayer(
-                                                                scaleX = scale,
-                                                                scaleY = scale,
-                                                                translationX = offsetX,
-                                                                translationY = offsetY
-                                                            ),
-                                                        contentScale = ContentScale.Fit
-                                                    )
-
-                                                    if (isZoomMode) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .fillMaxSize()
-                                                                .background(Color.Black.copy(alpha = 0.5f))
-                                                        )
-                                                        Text(
-                                                            "Режим налаштування (Зумуйте двома пальцями)",
-                                                            color = Color.White,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier
-                                                                .align(Alignment.TopCenter)
-                                                                .padding(top = 16.dp)
-                                                        )
-
-                                                        IconButton(
-                                                            onClick = {
-                                                                saveImageTransformLocally(context, photoUri, scale, offsetX, offsetY)
-                                                                isZoomMode = false
-                                                            },
-                                                            modifier = Modifier
-                                                                .align(Alignment.BottomEnd)
-                                                                .padding(16.dp)
-                                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                                                .size(48.dp)
+                                                            .widthIn(max = 420.dp)
+                                                            .fillMaxWidth(),
+                                                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                        border = BorderStroke(2.dp, Color.Black),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.padding(16.dp),
+                                                            horizontalAlignment = Alignment.CenterHorizontally
                                                         ) {
-                                                            Icon(Icons.Default.Check, "Зберегти", tint = Color.White)
-                                                        }
-
-                                                        IconButton(
-                                                            onClick = {
-                                                                val orig = getImageTransformLocally(context, photoUri)
-                                                                scale = orig.first
-                                                                offsetX = orig.second
-                                                                offsetY = orig.third
-                                                                isZoomMode = false
-                                                            },
-                                                            modifier = Modifier
-                                                                .align(Alignment.BottomStart)
-                                                                .padding(16.dp)
-                                                                .background(Color.Gray, CircleShape)
-                                                                .size(48.dp)
-                                                        ) {
-                                                            Icon(Icons.Default.Close, "Скасувати", tint = Color.White)
-                                                        }
-                                                    }
-
-                                                    if (!isZoomMode) {
-                                                        if (isCardEditMode) {
-                                                            IconButton(
-                                                                onClick = {
-                                                                    val options = CropImageContractOptions(Uri.parse(photoUri), CropImageOptions(
-                                                                        fixAspectRatio = false,
-                                                                        imageSourceIncludeCamera = false,
-                                                                        outputCompressFormat = Bitmap.CompressFormat.PNG,
-
-                                                                        borderLineColor = android.graphics.Color.BLACK,
-                                                                        borderCornerColor = android.graphics.Color.BLACK,
-                                                                        guidelinesColor = android.graphics.Color.BLACK
-                                                                    ))
-                                                                    imageCropLauncher.launch(options)
-                                                                },
-                                                                modifier = Modifier
-                                                                    .align(Alignment.TopStart)
-                                                                    .padding(8.dp)
-                                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                                    .size(36.dp)
-                                                            ) {
-                                                                Icon(Icons.Default.Edit, contentDescription = "Кадрувати", tint = Color.White, modifier = Modifier.size(20.dp))
+                                                            if (isCardEditMode) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.End
+                                                                ) {
+                                                                    IconButton(
+                                                                        onClick = { showLayoutSettings = true },
+                                                                        modifier = Modifier.size(32.dp)
+                                                                    ) {
+                                                                        Icon(Icons.Default.Settings, "Налаштувати макет", tint = Color.Gray)
+                                                                    }
+                                                                }
                                                             }
-                                                        }
 
-                                                        // А от ярлик "Основне" залишаємо завжди
-                                                        if (photoUri == product.imagePath) {
-                                                            Surface(
-                                                                color = Color.Black.copy(alpha = 0.6f),
-                                                                shape = RoundedCornerShape(4.dp),
-                                                                modifier = Modifier.padding(8.dp).align(Alignment.TopEnd)
-                                                            ) {
-                                                                Text("Основне", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                                                            val displayName = if (isLabelNameCaps) {
+                                                                product.name.ifEmpty { "БЕЗ НАЗВИ" }.uppercase()
+                                                            } else {
+                                                                product.name.ifEmpty { "Без назви" }
                                                             }
+
+                                                            Text(
+                                                                text = displayName,
+                                                                style = MaterialTheme.typography.titleLarge.copy(
+                                                                    fontWeight = FontWeight.Black,
+                                                                    fontSize = labelNameSize.sp,
+                                                                    lineHeight = labelLineHeight.sp
+                                                                ),
+                                                                color = Color.Black,
+                                                                textAlign = TextAlign.Center,
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+
+                                                            Spacer(modifier = Modifier.height(16.dp))
+
+                                                            if (product.imageHistory.isNotEmpty()) {
+                                                                val initialPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0)
+                                                                val pagerState = rememberPagerState(
+                                                                    initialPage = initialPage,
+                                                                    pageCount = { product.imageHistory.size }
+                                                                )
+
+                                                                LaunchedEffect(product.imagePath, product.imageHistory.size) {
+                                                                    val targetPage = product.imageHistory.indexOf(product.imagePath).coerceAtLeast(0)
+                                                                    if (pagerState.currentPage != targetPage) {
+                                                                        pagerState.animateScrollToPage(targetPage)
+                                                                    }
+                                                                }
+
+                                                                HorizontalPager(
+                                                                    state = pagerState,
+                                                                    modifier = Modifier.fillMaxWidth().height(380.dp),
+                                                                    userScrollEnabled = true
+                                                                ) { page ->
+                                                                    val photoUri = product.imageHistory[page]
+                                                                    val savedTransform = remember(photoUri) { getImageTransformLocally(context, photoUri) }
+                                                                    var scale by remember(photoUri) { mutableFloatStateOf(savedTransform.first) }
+                                                                    var offsetX by remember(photoUri) { mutableFloatStateOf(savedTransform.second) }
+                                                                    var offsetY by remember(photoUri) { mutableFloatStateOf(savedTransform.third) }
+                                                                    var isZoomMode by remember { mutableStateOf(false) }
+
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .fillMaxSize()
+                                                                            .background(Color.White)
+                                                                            .clip(RoundedCornerShape(8.dp))
+                                                                            .pointerInput(isZoomMode) {
+                                                                                if (isZoomMode) {
+                                                                                    detectTransformGestures { _, pan, zoom, _ ->
+                                                                                        scale = (scale * zoom).coerceIn(0.3f, 5f)
+                                                                                        val maxX = (size.width * kotlin.math.abs(scale - 1)) / 2
+                                                                                        val maxY = (size.height * kotlin.math.abs(scale - 1)) / 2
+                                                                                        offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                                                                        offsetY = (offsetY + pan.y).coerceIn(-maxY, maxY)
+                                                                                    }
+                                                                                } else {
+                                                                                    detectTapGestures(onLongPress = { isZoomMode = true })
+                                                                                }
+                                                                            },
+                                                                        contentAlignment = Alignment.Center
+                                                                    ) {
+                                                                        AsyncImage(
+                                                                            model = photoUri,
+                                                                            contentDescription = "Фото варіант $page",
+                                                                            modifier = Modifier
+                                                                                .fillMaxSize()
+                                                                                .graphicsLayer(
+                                                                                    scaleX = scale,
+                                                                                    scaleY = scale,
+                                                                                    translationX = offsetX,
+                                                                                    translationY = offsetY
+                                                                                ),
+                                                                            contentScale = ContentScale.Fit
+                                                                        )
+
+                                                                        if (isZoomMode) {
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxSize()
+                                                                                    .background(Color.Black.copy(alpha = 0.5f))
+                                                                            )
+                                                                            Text(
+                                                                                "Режим налаштування (Зумуйте двома пальцями)",
+                                                                                color = Color.White,
+                                                                                fontWeight = FontWeight.Bold,
+                                                                                modifier = Modifier
+                                                                                    .align(Alignment.TopCenter)
+                                                                                    .padding(top = 16.dp)
+                                                                            )
+                                                                            IconButton(
+                                                                                onClick = {
+                                                                                    saveImageTransformLocally(context, photoUri, scale, offsetX, offsetY)
+                                                                                    isZoomMode = false
+                                                                                },
+                                                                                modifier = Modifier
+                                                                                    .align(Alignment.BottomEnd)
+                                                                                    .padding(16.dp)
+                                                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                                                                    .size(48.dp)
+                                                                            ) {
+                                                                                Icon(Icons.Default.Check, "Зберегти", tint = Color.White)
+                                                                            }
+                                                                            IconButton(
+                                                                                onClick = {
+                                                                                    val orig = getImageTransformLocally(context, photoUri)
+                                                                                    scale = orig.first
+                                                                                    offsetX = orig.second
+                                                                                    offsetY = orig.third
+                                                                                    isZoomMode = false
+                                                                                },
+                                                                                modifier = Modifier
+                                                                                    .align(Alignment.BottomStart)
+                                                                                    .padding(16.dp)
+                                                                                    .background(Color.Gray, CircleShape)
+                                                                                    .size(48.dp)
+                                                                            ) {
+                                                                                Icon(Icons.Default.Close, "Скасувати", tint = Color.White)
+                                                                            }
+                                                                        }
+
+                                                                        if (!isZoomMode) {
+                                                                            if (isCardEditMode && productsToShow.size == 1) {
+                                                                                IconButton(
+                                                                                    onClick = {
+                                                                                        val options = CropImageContractOptions(Uri.parse(photoUri), CropImageOptions(
+                                                                                            fixAspectRatio = false,
+                                                                                            imageSourceIncludeCamera = false,
+                                                                                            outputCompressFormat = Bitmap.CompressFormat.PNG,
+                                                                                            borderLineColor = android.graphics.Color.BLACK,
+                                                                                            borderCornerColor = android.graphics.Color.BLACK,
+                                                                                            guidelinesColor = android.graphics.Color.BLACK
+                                                                                        ))
+                                                                                        imageCropLauncher.launch(options)
+                                                                                    },
+                                                                                    modifier = Modifier
+                                                                                        .align(Alignment.TopStart)
+                                                                                        .padding(8.dp)
+                                                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                                                        .size(36.dp)
+                                                                                ) {
+                                                                                    Icon(Icons.Default.Edit, contentDescription = "Кадрувати", tint = Color.White, modifier = Modifier.size(20.dp))
+                                                                                }
+                                                                            }
+                                                                            if (photoUri == product.imagePath) {
+                                                                                Surface(
+                                                                                    color = Color.Black.copy(alpha = 0.6f),
+                                                                                    shape = RoundedCornerShape(4.dp),
+                                                                                    modifier = Modifier.padding(8.dp).align(Alignment.TopEnd)
+                                                                                ) {
+                                                                                    Text("Основне", color = Color.White, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                if (isCardEditMode && productsToShow.size == 1) {
+                                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                                    Row(
+                                                                        modifier = Modifier.wrapContentHeight().fillMaxWidth(),
+                                                                        horizontalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        repeat(product.imageHistory.size) { iteration ->
+                                                                            val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
+                                                                            Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
+                                                                        }
+                                                                    }
+
+                                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                                    val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
+                                                                    Row(
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                    ) {
+                                                                        if (currentPagerPhoto != product.imagePath) {
+                                                                            Button(
+                                                                                onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
+                                                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                                            ) {
+                                                                                Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                                                                Spacer(modifier = Modifier.width(8.dp))
+                                                                                Text("Зберегти як основну")
+                                                                            }
+                                                                        }
+                                                                        TextButton(onClick = { showBottomSheet = true }) {
+                                                                            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                                            Text("Додати варіант")
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                            } else {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .height(260.dp)
+                                                                        .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
+                                                                        .clickable {
+                                                                            if (productsToShow.size == 1) showBottomSheet = true
+                                                                        },
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                        Text("Немає зображення", color = Color.Gray)
+                                                                        if (productsToShow.size == 1) {
+                                                                            Spacer(modifier = Modifier.height(12.dp))
+                                                                            Button(onClick = { showBottomSheet = true }) { Text("Додати фото") }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            HorizontalDivider(color = Color.Black, thickness = 1.dp)
+                                                            Spacer(modifier = Modifier.height(16.dp))
+
+                                                            val displayBarcode = remember(product.barcode, activePrefixes) {
+                                                                val code = product.barcode
+                                                                if (code.length <= 8 && activePrefixes.isNotEmpty()) {
+                                                                    val prefix = activePrefixes.first()
+                                                                    "$prefix$code" + "000000000"
+                                                                } else { code }
+                                                            }
+
+                                                            val barcodeBitmap = remember(displayBarcode) { generateBarcodeBitmap(displayBarcode) }
+
+                                                            if (barcodeBitmap != null) {
+                                                                Image(
+                                                                    bitmap = barcodeBitmap,
+                                                                    contentDescription = "Штрих-код",
+                                                                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                                                                    contentScale = ContentScale.Fit
+                                                                )
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = displayBarcode,
+                                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    letterSpacing = 2.sp,
+                                                                    fontSize = labelBarcodeSize.sp
+                                                                ),
+                                                                color = Color.Black,
+                                                                textAlign = TextAlign.Center,
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
                                                         }
                                                     }
                                                 }
-                                            }
-
-                                            // 3. ХОВАЄМО КРАПКИ І НИЖНІ КНОПКИ В УМОВУ
-                                            if (isCardEditMode) {
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                Row(
-                                                    modifier = Modifier.wrapContentHeight().fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.Center
-                                                ) {
-                                                    repeat(product.imageHistory.size) { iteration ->
-                                                        val color = if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
-                                                        Box(modifier = Modifier.padding(2.dp).clip(CircleShape).background(color).size(8.dp))
-                                                    }
-                                                }
-
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                val currentPagerPhoto = product.imageHistory[pagerState.currentPage]
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    if (currentPagerPhoto != product.imagePath) {
-                                                        Button(
-                                                            onClick = { viewModel.setPrimaryImage(currentPagerPhoto) },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                                        ) {
-                                                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Text("Зберегти як основну")
-                                                        }
-                                                    }
-                                                    TextButton(onClick = { showBottomSheet = true }) {
-                                                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text("Додати варіант")
-                                                    }
-                                                }
-                                            }
-
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(150.dp)
-                                                    .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
-                                                    .clickable { showBottomSheet = true },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                    Text("Немає зображення", color = Color.Gray)
-                                                    Spacer(modifier = Modifier.height(12.dp))
-                                                    Button(onClick = { showBottomSheet = true }) { Text("Додати фото") }
-                                                }
+                                                Spacer(modifier = Modifier.height(32.dp))
                                             }
                                         }
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        HorizontalDivider(color = Color.Black, thickness = 1.dp)
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        val displayBarcode = remember(product.barcode, activePrefixes) {
-                                            val code = product.barcode
-                                            if (code.length <= 8 && activePrefixes.isNotEmpty()) {
-                                                val prefix = activePrefixes.first()
-                                                "$prefix$code" + "000000000"
-                                            } else { code }
-                                        }
-
-                                        val barcodeBitmap = remember(displayBarcode) { generateBarcodeBitmap(displayBarcode) }
-
-                                        if (barcodeBitmap != null) {
-                                            Image(
-                                                bitmap = barcodeBitmap,
-                                                contentDescription = "Штрих-код",
-                                                modifier = Modifier.fillMaxWidth().height(60.dp),
-                                                contentScale = ContentScale.Fit
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = displayBarcode,
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                letterSpacing = 2.sp,
-                                                fontSize = labelBarcodeSize.sp
-                                            ),
-                                            color = Color.Black,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(32.dp))
-
-                            } ?: run {
+                            } else {
                                 if (lastScannedBarcode != null && !isMagicScanning) {
                                     if (isCreating) {
                                         Card(

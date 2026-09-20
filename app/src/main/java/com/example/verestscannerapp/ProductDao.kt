@@ -25,4 +25,7 @@ interface ProductDao {
 
     @Delete
     suspend fun deleteProduct(product: Product)
+
+    @Query("SELECT * FROM products WHERE barcode LIKE :prefix || '%'")
+    suspend fun getProductsByPrefix(prefix: String): List<Product>
 }

@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,11 +29,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
 fun SettingsScreen(viewModel: ScannerViewModel, onClose: () -> Unit) {
@@ -113,6 +123,7 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
     var clickCount by remember { mutableStateOf(0) }
+    var showMiniGame by remember { mutableStateOf(false) }
 
     BackHandler {
         onBack()
@@ -174,12 +185,8 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
                             clickCount++
-                            if (clickCount == 7) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "🎉 Вітаю! Ви знайшли пасхалку! З любов'ю, Розробник 😉",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
+                            if (clickCount >= 7) {
+                                showMiniGame = true
                                 clickCount = 0
                             }
                         }
@@ -224,6 +231,17 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                         Text("Написати на Email")
                     }
                 }
+            }
+        }
+    }
+
+    if (showMiniGame) {
+        Dialog(
+            onDismissRequest = { showMiniGame = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                EasterEggMiniGame(onClose = { showMiniGame = false })
             }
         }
     }
@@ -483,7 +501,6 @@ fun AutoBackupSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
     SettingsBaseScaffold("Резервне копіювання", onBack) {
         Text("Налаштування автобекапу", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 16.dp))
 
-        // ВИБІР ЧАСТОТИ (Додано "Щомісяця")
         ExposedDropdownMenuBox(
             expanded = expandedFreq,
             onExpandedChange = { expandedFreq = it }
@@ -512,7 +529,6 @@ fun AutoBackupSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ВИБІР ПАПКИ
         if (backupFreq != "Ніколи") {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -550,6 +566,222 @@ fun AutoBackupSettings(viewModel: ScannerViewModel, onBack: () -> Unit) {
                         ) {
                             Text("Скинути за замовчуванням", color = MaterialTheme.colorScheme.error)
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EasterEggMiniGame(onClose: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("mini_game_prefs", android.content.Context.MODE_PRIVATE) }
+
+    var highScore by remember { mutableIntStateOf(prefs.getInt("scanner_ninja_high_score", 0)) }
+    var score by remember { mutableIntStateOf(0) }
+    var lives by remember { mutableIntStateOf(3) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isGameOver by remember { mutableStateOf(false) }
+
+    val inventoryItems = listOf(
+        "Сканер штрих-кодів Zebra", "Термінал збору даних (ТСД)", "Стрічкова палета 1200х800",
+        "Стрійка стрейч-плівки", "Скотч армований 50мм", "Ручний гідравлічний візок",
+        "Датчик руху складський", "Акумулятор для навантажувача", "Стелажна балка 2.5м"
+    )
+
+    val fakeItems = listOf(
+        "Бракована коробка", "Зламаний піддон", "Розлита вода",
+        "Прострочений стікер", "Пошкоджений штрих-код", "Сторонній предмет"
+    )
+
+    data class ConveyorItem(val name: String, val isGood: Boolean, var xPos: Float)
+    var currentItem by remember { mutableStateOf<ConveyorItem?>(null) }
+    var conveyorSpeed by remember { mutableFloatStateOf(4f) }
+
+    val currentRank = when {
+        score >= 300 -> "⚡ Легенда ТСД"
+        score >= 150 -> "🚀 Швидкісний сканер"
+        score >= 50 -> "📦 Лінійний оператор"
+        else -> "👶 Стажер з негнучким пальцем"
+    }
+
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+
+        score = 0
+        lives = 3
+        conveyorSpeed = 4f
+        currentItem = ConveyorItem(
+            name = inventoryItems.random(),
+            isGood = true,
+            xPos = 350f
+        )
+
+        while (isPlaying) {
+            kotlinx.coroutines.delay(16L)
+
+            currentItem?.let { item ->
+                val newX = item.xPos - conveyorSpeed
+                if (newX < -60f) {
+                    if (item.isGood) {
+                        lives -= 1
+                        if (lives <= 0) {
+                            isPlaying = false
+                            isGameOver = true
+                        }
+                    }
+                    val isNextGood = (0..1).random() == 1
+                    currentItem = ConveyorItem(
+                        name = if (isNextGood) inventoryItems.random() else fakeItems.random(),
+                        isGood = isNextGood,
+                        xPos = 350f
+                    )
+                } else {
+                    currentItem = item.copy(xPos = newX)
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(540.dp)
+            .background(Color(0xFF1E272C), RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(24.dp))
+            .padding(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("🥷 Сканер-Ніндзя", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Бали: $score | Життя: ${"❤️".repeat(maxOf(0, lives))}", color = Color(0xFF81D4FA), fontSize = 11.sp)
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, null, tint = Color.White)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Ранг: $currentRank", color = Color(0xFFFFCA28), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color(0xFF263238), RoundedCornerShape(14.dp))
+                    .border(2.dp, Color(0xFF37474F), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(Color(0xFF455A64))
+                        .align(Alignment.Center)
+                )
+
+                currentItem?.let { item ->
+                    Box(
+                        modifier = Modifier
+                            .offset(x = item.xPos.dp, y = 0.dp)
+                            .background(
+                                if (item.isGood) Color(0xFF388E3C) else Color(0xFFD32F2F),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .border(1.5.dp, Color.White, RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (isPlaying) {
+                                    if (item.isGood) {
+                                        score += 10
+                                        conveyorSpeed += 0.1f
+                                        if (score > highScore) {
+                                            highScore = score
+                                            prefs.edit().putInt("scanner_ninja_high_score", highScore).apply()
+                                        }
+                                    } else {
+                                        lives -= 1
+                                        if (lives <= 0) {
+                                            isPlaying = false
+                                            isGameOver = true
+                                        }
+                                    }
+                                    val isNextGood = (0..1).random() == 1
+                                    currentItem = ConveyorItem(
+                                        name = if (isNextGood) inventoryItems.random() else fakeItems.random(),
+                                        isGood = isNextGood,
+                                        xPos = 350f
+                                    )
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(if (item.isGood) "📦" else "⚠️", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(item.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (isPlaying) {
+                Text(
+                    text = "Тапай ТІЛЬКИ по реальних товарах з інвентарю! Ігноруй брак 🛑",
+                    color = Color(0xFFB0BEC5),
+                    fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+        }
+
+        if (!isPlaying) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF1E272C).copy(alpha = 0.96f), RoundedCornerShape(24.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    if (isGameOver) {
+                        Text("💥 ЗМІНУ ЗАВЕРШЕНО (ПОМИЛКИ)", color = Color(0xFFEF5350), fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Твій підсумковий ранг: $currentRank", color = Color(0xFFFFCA28), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Зароблено балів: $score | Рекорд: $highScore", color = Color.White, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                    } else {
+                        Text("🥷 Сканер-Ніндзя: Швидкий прайс", color = Color(0xFF81D4FA), fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("На конвеєрі з'являються товари з інвентарю та брак. Твоя мета — тапати виключно по правильних позиціях!", color = Color.LightGray, fontSize = 11.sp, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    Button(
+                        onClick = {
+                            isGameOver = false
+                            isPlaying = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B)),
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Text(if (isGameOver) "Спробувати знову" else "Розпочати сканування", fontSize = 14.sp)
                     }
                 }
             }

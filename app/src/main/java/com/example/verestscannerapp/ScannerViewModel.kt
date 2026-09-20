@@ -64,19 +64,19 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     private val LABEL_LINE_HEIGHT_KEY = floatPreferencesKey("label_line_height")
 
     val labelNameSize: StateFlow<Float> = application.dataStore.data.map { prefs ->
-        prefs[LABEL_NAME_SIZE_KEY] ?: 22f // 22f - розмір за замовчуванням
+        prefs[LABEL_NAME_SIZE_KEY] ?: 22f
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 22f)
 
     val labelLineHeight: StateFlow<Float> = application.dataStore.data.map { prefs ->
-        prefs[LABEL_LINE_HEIGHT_KEY] ?: 28f // 28f - міжрядковий відступ за замовчуванням
+        prefs[LABEL_LINE_HEIGHT_KEY] ?: 28f
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 28f)
 
     val labelBarcodeSize: StateFlow<Float> = application.dataStore.data.map { prefs ->
-        prefs[LABEL_BARCODE_SIZE_KEY] ?: 18f // 18f - розмір за замовчуванням
+        prefs[LABEL_BARCODE_SIZE_KEY] ?: 18f
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 18f)
 
     val isLabelNameCaps: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
-        prefs[LABEL_NAME_CAPS_KEY] ?: true // За замовчуванням КАПС увімкнено
+        prefs[LABEL_NAME_CAPS_KEY] ?: true
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val customPrefixes: StateFlow<Set<String>> = application.dataStore.data.map { prefs ->
@@ -176,6 +176,15 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     val newNameInput: StateFlow<String> = _newNameInput
     fun updateNewNameInput(name: String) { _newNameInput.value = name }
 
+    private val RESOLVE_WITH_DIALOG_KEY = booleanPreferencesKey("resolve_with_dialog")
+
+    val resolveWithDialog: StateFlow<Boolean> = application.dataStore.data.map { prefs ->
+        prefs[RESOLVE_WITH_DIALOG_KEY] ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setResolveWithDialog(useDialog: Boolean) = viewModelScope.launch {
+        getApplication<Application>().dataStore.edit { it[RESOLVE_WITH_DIALOG_KEY] = useDialog }
+    }
     private val _isCreating = MutableStateFlow(false)
     val isCreating: StateFlow<Boolean> = _isCreating
     fun setIsCreating(isCreating: Boolean) { _isCreating.value = isCreating }
@@ -183,7 +192,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     private val _isManualInputMode = MutableStateFlow(false)
     val isManualInputMode: StateFlow<Boolean> = _isManualInputMode
     fun setIsManualInputMode(isManualMode: Boolean) { _isManualInputMode.value = isManualMode }
-
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
         getApplication<Application>().dataStore.edit { it[THEME_KEY] = mode.name }
@@ -235,7 +243,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
             uniqueWords.addAll(setOf("КОВБАСА", "НАПІВКОПЧЕНА", "ВАРЕНА", "М'ЯСО", "СОСИСКИ", "САЛО", "БОКОВЕ", "СОРТ", "СВИНЯЧА", "ЯЛОВИЧА", "ФІЛЕ", "СУШЕНА", "ОХОЛОДЖЕНИЙ", "НАПІВФАБРИКАТ", "ВЕЛИКОШМАТКОВИЙ", "ДРІБНОШМАТКОВИЙ"))
 
             for (product in allProducts) {
-
                 val words = product.name.split(Regex("[^А-Яа-яЄєІіЇїҐґA-Za-z'’]+"))
                 for (word in words) {
                     if (word.length > 2) {
@@ -302,6 +309,9 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
     private val _scannedProduct = MutableStateFlow<Product?>(null)
     val scannedProduct: StateFlow<Product?> = _scannedProduct
 
+    private val _conflictProducts = MutableStateFlow<List<Product>>(emptyList())
+    val conflictProducts: StateFlow<List<Product>> = _conflictProducts
+
     private val _saveStatus = MutableStateFlow<String?>(null)
     val saveStatus: StateFlow<String?> = _saveStatus
 
@@ -312,6 +322,16 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
 
     val allProducts: StateFlow<List<Product>> = dao.getAllProducts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun resolveConflict(product: Product) {
+        _scannedProduct.value = product
+        _conflictProducts.value = emptyList()
+        _lastScannedBarcode.value = null
+    }
+
+    fun clearConflicts() {
+        _conflictProducts.value = emptyList()
+    }
 
     private fun setStatus(message: String) {
         statusJob?.cancel()
@@ -429,7 +449,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                 }
 
                 zipOut.close()
-
                 setStatus("Бекап створено: ${backupFile.absolutePath}")
 
             } catch (e: Exception) {
@@ -523,6 +542,28 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         }
 
         viewModelScope.launch {
+            if (cleanBarcode.length == 13 && cleanBarcode.startsWith("2")) {
+                val weightBaseCode = cleanBarcode.substring(0, 8)
+
+                val matches = dao.getProductsByPrefix(weightBaseCode)
+
+                when {
+                    matches.size == 1 -> {
+                        _scannedProduct.value = matches.first()
+                        _lastScannedBarcode.value = null
+                    }
+                    matches.size > 1 -> {
+                        _conflictProducts.value = matches
+                        _lastScannedBarcode.value = null
+                    }
+                    else -> {
+                        _scannedProduct.value = null
+                        _lastScannedBarcode.value = cleanBarcode
+                    }
+                }
+                return@launch
+            }
+
             var existing = dao.getProductByBarcode(cleanBarcode)
 
             if (existing == null) {
@@ -549,27 +590,6 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
                             if (existing != null) break
                         }
                     }
-                }
-            }
-
-            if (existing == null && cleanBarcode.length >= 6) {
-                for (baseLength in 8 downTo 5) {
-                    if (baseLength > cleanBarcode.length) continue
-
-                    val baseCode = cleanBarcode.substring(0, baseLength)
-                    existing = dao.getProductByBarcode(baseCode)
-                    if (existing != null) break
-
-                    val paddedZeros = baseCode.padEnd(13, '0')
-                    existing = dao.getProductByBarcode(paddedZeros)
-                    if (existing != null) break
-
-                    val paddedTo12 = baseCode.padEnd(12, '0')
-                    val checksum = calculateEan13Checksum(paddedTo12)
-                    val correctEan13 = paddedTo12 + checksum
-
-                    existing = dao.getProductByBarcode(correctEan13)
-                    if (existing != null) break
                 }
             }
 
@@ -662,6 +682,7 @@ class ScannerViewModel(application: Application, private val dao: ProductDao) : 
         _isCreating.value = false
         _newNameInput.value = ""
         _scanInput.value = ""
+        _conflictProducts.value = emptyList()
     }
 
     fun performTextRecognition(context: Context, bitmap: Bitmap, onResult: (String) -> Unit) {
